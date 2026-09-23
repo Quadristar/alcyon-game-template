@@ -7,6 +7,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { SceneManager } from '../../src/app/SceneManager';
 import type { Scene, SceneContext } from '../../src/presentation/scenes/Scene';
 import type { ProgressListener } from '../../src/services/assets/assetTypes';
+import { InputManager } from '../../src/services/input/InputManager';
+import type { InputEvent } from '../../src/services/input/inputTypes';
+import { SaveManager } from '../../src/services/save/SaveManager';
+import { MemoryStorage } from '../../src/services/save/storages';
+import { Settings } from '../../src/services/settings/Settings';
 import { computeLayout } from '../../src/services/layout/computeLayout';
 import type { Layout, LayoutDefinition } from '../../src/services/layout/layoutTypes';
 
@@ -118,6 +123,17 @@ function setup(
   const log: string[] = [];
   const bundles = new FakeBundles(log);
   const loading = { show: vi.fn<(progress: number) => void>(), hide: vi.fn() };
+  const input = new InputManager({
+    thresholds: { dragStartDistance: 10, tapMaxDurationMs: 300, swipeMinDistance: 50, swipeMaxDurationMs: 500 },
+    toLogical: (point) => point,
+  });
+  const saveManager = new SaveManager({ gameId: 'test', storage: new MemoryStorage() });
+  const settings = new Settings({
+    save: saveManager,
+    defaults: { volume: { master: 1, bgm: 1, se: 1, voice: 1 }, muted: false, quality: 'medium' },
+    saveDelayMs: 0,
+  });
+  const save = saveManager.open({ key: 'game', version: 1, createDefault: () => ({}) });
   const created: Partial<Record<Key, RecordingScene>> = {};
   const contexts: SceneContext<Key, Manifest>[] = [];
   const factory = (key: Key) => (context: SceneContext<Key, Manifest>) => {
@@ -139,6 +155,7 @@ function setup(
     fadeOverlay,
     fadeDurationMs: FADE_MS,
     assets: bundles,
+    input,
     loading,
     loadingDelayMs: LOADING_DELAY_MS,
     getLayout: () => layout,
@@ -149,6 +166,8 @@ function setup(
           throw new Error('テストでは使わない');
         },
       },
+      save,
+      settings,
     },
     onError,
   });
@@ -169,6 +188,7 @@ function setup(
     rotate,
     bundles,
     loading,
+    input,
     getLayout: () => layout,
   };
 }
@@ -552,5 +572,76 @@ describe('SceneManager: バンドルの読み込みと解放', () => {
     manager.start('a');
     await flushPromises();
     expect(onError).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** タップを1回入力する */
+function tap(input: InputManager): void {
+  input.pointerDown(1, { x: 0, y: 0 }, 0);
+  input.pointerUp(1, { x: 0, y: 0 }, 10);
+}
+
+describe('SceneManager: 入力', () => {
+  it('切り替え中は入力を一時停止し、切り替えが終わったら再開する', async () => {
+    const { manager, input, bundles } = setup({ bundles: { b: ['bundleB'] } });
+    manager.start('a');
+    expect(input.isPaused).toBe(true);
+    finishFade(manager);
+    expect(input.isPaused).toBe(false);
+
+    bundles.hold = true;
+    manager.change('b');
+    expect(input.isPaused).toBe(true);
+    finishFade(manager); // 読み込み中
+    expect(input.isPaused).toBe(true);
+    bundles.flush();
+    await flushPromises();
+    finishFade(manager);
+    expect(input.isPaused).toBe(false);
+  });
+
+  it('回転で切り替えを即座に完了させた場合も再開する', () => {
+    const { manager, input, rotate } = setup();
+    manager.start('a');
+    rotate();
+    expect(input.isPaused).toBe(false);
+  });
+
+  it('シーンが登録した入力は、切り替え中を除いて届き、exit で自動的に解除される', () => {
+    const { manager, input, contexts } = setup();
+    manager.start('a');
+    const events: InputEvent[] = [];
+    contexts[0]?.input.on((e) => events.push(e));
+
+    tap(input); // フェードイン中なので届かない
+    finishFade(manager);
+    tap(input);
+    expect(events.map((e) => e.type)).toEqual(['tap']);
+
+    manager.change('b');
+    finishFade(manager);
+    finishFade(manager);
+    tap(input); // a は exit 済みなので届かない
+    expect(events).toHaveLength(1);
+  });
+
+  it('シーンが一時停止したまま exit しても、入力は再開される', () => {
+    const { manager, input, contexts } = setup();
+    manager.start('a');
+    finishFade(manager);
+    contexts[0]?.input.pause();
+    expect(input.isPaused).toBe(true);
+
+    manager.change('b');
+    finishFade(manager);
+    finishFade(manager);
+    expect(input.isPaused).toBe(false);
+  });
+
+  it('destroy すると一時停止も解除する', () => {
+    const { manager, input } = setup();
+    manager.start('a');
+    manager.destroy();
+    expect(input.isPaused).toBe(false);
   });
 });

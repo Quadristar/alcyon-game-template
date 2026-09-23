@@ -15,11 +15,13 @@
  *
  * 画面の回転などで resize() が呼ばれたら、進行中のフェードを即座に完了させてから
  * シーンの resize を呼ぶ。読み込み中・enter の完了待ちの場合は、完了時にフェードを省略する。
+ * 切り替え中(idle 以外)は入力を一時停止する。
  */
-import type { Scene, SceneContext } from '../presentation/scenes/Scene';
+import type { SceneContext } from '../presentation/scenes/Scene';
 import type { AssetManifest, BundleName } from '../services/assets/assetTypes';
 import type { Layout } from '../services/layout/layoutTypes';
 import { LoadingProgressTracker } from './LoadingProgressTracker';
+import { MountedScene } from './MountedScene';
 import type { SceneManagerOptions } from './sceneManagerTypes';
 
 export type { LoadingIndicator, SceneBundleLoader, SceneManagerOptions } from './sceneManagerTypes';
@@ -27,17 +29,11 @@ export type { LoadingIndicator, SceneBundleLoader, SceneManagerOptions } from '.
 /** 切り替えの段階 */
 type Phase = 'idle' | 'fadeOut' | 'loading' | 'entering' | 'fadeIn';
 
-interface ActiveScene<K extends string, L extends Layout, M extends AssetManifest> {
-  readonly key: K;
-  readonly scene: Scene<L, M>;
-  readonly bundles: readonly BundleName<M>[];
-  /** 最後に resize() に渡したレイアウト(同じレイアウトで二重に呼ばないため) */
-  layout: L | null;
-}
-
-export class SceneManager<K extends string, L extends Layout = Layout, M extends AssetManifest = AssetManifest> {
-  private active: ActiveScene<K, L, M> | null = null;
+export class SceneManager<K extends string, L extends Layout = Layout, M extends AssetManifest = AssetManifest, D = unknown> {
+  private active: MountedScene<K, L, M> | null = null;
   private phase: Phase = 'idle';
+  /** 切り替え中の入力の一時停止を解除する関数 */
+  private resumeInput: (() => void) | null = null;
   private elapsedMs = 0;
   /** フェードアウト後に切り替える先 */
   private target: K | null = null;
@@ -48,9 +44,9 @@ export class SceneManager<K extends string, L extends Layout = Layout, M extends
   /** 新しいシーンの読み込み後に解放する、旧シーンのバンドル */
   private pendingRelease: BundleName<M>[] = [];
   private readonly loading: LoadingProgressTracker;
-  private readonly context: SceneContext<K, M>;
+  private readonly context: Omit<SceneContext<K, M, D>, 'input'>;
 
-  constructor(private readonly options: SceneManagerOptions<K, L, M>) {
+  constructor(private readonly options: SceneManagerOptions<K, L, M, D>) {
     this.context = { ...options.context, changeScene: (key) => this.change(key) };
     this.loading = new LoadingProgressTracker(options.loading, options.loadingDelayMs);
     this.setOverlay(1);
@@ -83,7 +79,7 @@ export class SceneManager<K extends string, L extends Layout = Layout, M extends
           return;
         }
         this.target = key;
-        this.phase = 'fadeOut';
+        this.setPhase('fadeOut');
         this.elapsedMs = 0;
         this.setOverlay(0);
         return;
@@ -136,7 +132,7 @@ export class SceneManager<K extends string, L extends Layout = Layout, M extends
     this.disposeActive();
     this.releasePending();
     this.loading.finish();
-    this.phase = 'idle';
+    this.setPhase('idle');
     this.target = null;
     this.queued = null;
     this.skipFadeIn = false;
@@ -166,23 +162,20 @@ export class SceneManager<K extends string, L extends Layout = Layout, M extends
     }
     this.disposeActive();
     this.setOverlay(1);
-    this.phase = 'loading';
+    this.setPhase('loading');
     this.elapsedMs = 0;
 
-    let scene: Scene<L, M>;
+    let mounted: MountedScene<K, L, M>;
     try {
-      scene = this.options.scenes[key](this.context);
-      this.options.sceneLayer.addChild(scene.root);
-      if (scene.background !== undefined) {
-        this.options.backgroundLayer.addChild(scene.background);
-      }
-      this.active = { key, scene, bundles: scene.bundles ?? [], layout: null };
+      mounted = MountedScene.mount(key, this.options.scenes[key], this.context, this.options);
     } catch (error) {
       this.options.onError(error);
       return;
     }
+    this.active = mounted;
+    const scene = mounted.scene;
 
-    const bundles = this.active.bundles;
+    const bundles = mounted.bundles;
     if (bundles.length === 0) {
       this.releasePending();
       this.beginEnter(scene);
@@ -204,13 +197,13 @@ export class SceneManager<K extends string, L extends Layout = Layout, M extends
   }
 
   /** 読み込みの完了後: enter を呼ぶ */
-  private beginEnter(scene: Scene<L, M>): void {
+  private beginEnter(scene: MountedScene<K, L, M>['scene']): void {
     // 待っている間に破棄された場合は何もしない
     if (this.active?.scene !== scene || this.phase !== 'loading') {
       return;
     }
     this.loading.finish();
-    this.phase = 'entering';
+    this.setPhase('entering');
 
     let entered: void | Promise<void>;
     try {
@@ -230,11 +223,11 @@ export class SceneManager<K extends string, L extends Layout = Layout, M extends
   }
 
   /** enter の完了後: 配置してフェードインを始める */
-  private afterEnter(scene: Scene<L, M>): void {
+  private afterEnter(scene: MountedScene<K, L, M>['scene']): void {
     if (this.active?.scene !== scene || this.phase !== 'entering') {
       return;
     }
-    this.phase = 'fadeIn';
+    this.setPhase('fadeIn');
     this.elapsedMs = 0;
     this.resizeActive(this.options.getLayout());
     if (this.skipFadeIn) {
@@ -245,7 +238,7 @@ export class SceneManager<K extends string, L extends Layout = Layout, M extends
 
   /** フェードインを終える。保留中の要求があれば、次の切り替え(フェードアウト)を始める */
   private finishFadeIn(): void {
-    this.phase = 'idle';
+    this.setPhase('idle');
     this.elapsedMs = 0;
     this.setOverlay(0);
     const next = this.queued;
@@ -272,13 +265,17 @@ export class SceneManager<K extends string, L extends Layout = Layout, M extends
     }
     this.active = null;
     this.pendingRelease.push(...active.bundles);
-    try {
-      active.scene.exit();
-    } catch (error) {
-      this.options.onError(error);
-    } finally {
-      active.scene.root.destroy({ children: true });
-      active.scene.background?.destroy({ children: true });
+    active.dispose(this.options.onError);
+  }
+
+  /** 段階を変え、切り替え中は入力を一時停止する */
+  private setPhase(phase: Phase): void {
+    this.phase = phase;
+    if (phase === 'idle') {
+      this.resumeInput?.();
+      this.resumeInput = null;
+    } else {
+      this.resumeInput ??= this.options.input.pause();
     }
   }
 
