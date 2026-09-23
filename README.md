@@ -11,7 +11,12 @@
 
 ## 現在の状態
 
-**Phase 1(プロジェクト初期構築)**。起動すると「Phase 1 OK」と、レンダラ名・画面サイズ・devicePixelRatio・画面の向きを表示します。
+**Phase 2-1(レイアウト・シーン管理)**。起動するとデモシーンAが表示されます。
+
+- デモシーンA: レイアウト定義の領域(黄色の枠)・基準点(桃色の点)・セーフエリア(緑の枠)と、レンダラ名・画面サイズ・devicePixelRatio・向きなどを表示
+- デモシーンB: 別の色の画面。中央で四角が回る
+- 画面をタップすると A と B がフェードで切り替わる
+- URL に `?safearea=40,0,24,0`(上,右,下,左。CSS ピクセル)を付けると、セーフエリアを仮の値で確認できる
 
 ## 使い方
 
@@ -54,11 +59,13 @@ npm run dev
 ```
 src/
   main.ts                   エントリーポイント(起動のみ)
-  app/                      起動処理・各層の接続
+  app/                      起動処理・各層の接続(Game, SceneManager)
   core/                     汎用基盤(外部依存なし)。SeededRng など
   data/                     ゲームデータ(雛形では README のみ)
   systems/                  純粋なゲームロジック(雛形では README のみ)
-  presentation/debug/       起動確認画面
+  services/layout/          LayoutManager・配置計算・セーフエリアの取得
+  presentation/scenes/      シーンの型(Scene.ts)
+  presentation/scenes/demo/ デモ(ゲームを作るときはフォルダごと削除する)
 tests/                      Vitest のテスト
 .github/workflows/          CI(ci.yml)と公開(deploy.yml)
 ```
