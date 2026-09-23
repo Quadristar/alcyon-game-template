@@ -6,12 +6,18 @@ import { Container } from 'pixi.js';
 import { describe, expect, it, vi } from 'vitest';
 import { SceneManager } from '../../src/app/SceneManager';
 import type { Scene, SceneContext } from '../../src/presentation/scenes/Scene';
+import type { ProgressListener } from '../../src/services/assets/assetTypes';
 import { computeLayout } from '../../src/services/layout/computeLayout';
 import type { Layout, LayoutDefinition } from '../../src/services/layout/layoutTypes';
 
 type Key = 'a' | 'b' | 'c';
 
+/** テスト用のマニフェスト(中身は使わない) */
+type Manifest = { common: Record<string, string>; bundleA: Record<string, string>; bundleB: Record<string, string> };
+type Bundle = keyof Manifest;
+
 const FADE_MS = 100;
+const LOADING_DELAY_MS = 300;
 
 const DEFINITION: LayoutDefinition<never, never> = {
   portrait: { regions: {}, anchors: {} },
@@ -27,7 +33,7 @@ function makeLayout(width: number, height: number): Layout {
 }
 
 /** 呼び出しを log に記録するテスト用のシーン */
-class RecordingScene implements Scene {
+class RecordingScene implements Scene<Layout, Manifest> {
   readonly root = new Container();
   readonly background = new Container();
   readonly child = new Container();
@@ -37,6 +43,7 @@ class RecordingScene implements Scene {
     readonly name: string,
     private readonly log: string[],
     private readonly enterResult?: Promise<void>,
+    readonly bundles: readonly Bundle[] = [],
   ) {
     this.root.addChild(this.child);
   }
@@ -57,14 +64,66 @@ class RecordingScene implements Scene {
   }
 }
 
-function setup(options: { enterResults?: Partial<Record<Key, Promise<void>>> } = {}) {
+/** 手動で完了させられる、偽のバンドル読み込み */
+class FakeBundles {
+  readonly refCounts = new Map<Bundle, number>();
+  /** true の間は acquire の完了を保留する */
+  hold = false;
+  failNext = false;
+  private readonly pending: { resolve: () => void; onProgress?: ProgressListener | undefined }[] = [];
+
+  constructor(private readonly log: string[]) {}
+
+  acquire(bundle: Bundle, onProgress?: ProgressListener): Promise<void> {
+    this.log.push(`acquire:${bundle}`);
+    this.refCounts.set(bundle, (this.refCounts.get(bundle) ?? 0) + 1);
+    if (this.failNext) {
+      this.failNext = false;
+      return Promise.reject(new Error('load failed'));
+    }
+    if (!this.hold) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => this.pending.push({ resolve, onProgress }));
+  }
+
+  release(bundle: Bundle): boolean {
+    this.log.push(`release:${bundle}`);
+    this.refCounts.set(bundle, (this.refCounts.get(bundle) ?? 0) - 1);
+    return true;
+  }
+
+  /** 保留中の読み込みの進捗を通知する */
+  report(progress: number): void {
+    for (const p of this.pending) {
+      p.onProgress?.(progress);
+    }
+  }
+
+  /** 保留中の読み込みをすべて完了させる */
+  flush(): void {
+    this.hold = false;
+    for (const p of this.pending.splice(0)) {
+      p.resolve();
+    }
+  }
+}
+
+function setup(
+  options: {
+    enterResults?: Partial<Record<Key, Promise<void>>>;
+    bundles?: Partial<Record<Key, readonly Bundle[]>>;
+  } = {},
+) {
   const log: string[] = [];
+  const bundles = new FakeBundles(log);
+  const loading = { show: vi.fn<(progress: number) => void>(), hide: vi.fn() };
   const created: Partial<Record<Key, RecordingScene>> = {};
-  const contexts: SceneContext<Key>[] = [];
-  const factory = (key: Key) => (context: SceneContext<Key>) => {
+  const contexts: SceneContext<Key, Manifest>[] = [];
+  const factory = (key: Key) => (context: SceneContext<Key, Manifest>) => {
     log.push(`${key}.create`);
     contexts.push(context);
-    const scene = new RecordingScene(key, log, options.enterResults?.[key]);
+    const scene = new RecordingScene(key, log, options.enterResults?.[key], options.bundles?.[key] ?? []);
     created[key] = scene;
     return scene;
   };
@@ -73,14 +132,24 @@ function setup(options: { enterResults?: Partial<Record<Key, Promise<void>>> } =
   const fadeOverlay = new Container();
   let layout = makeLayout(390, 844);
   const onError = vi.fn();
-  const manager = new SceneManager<Key>({
+  const manager = new SceneManager<Key, Layout, Manifest>({
     scenes: { a: factory('a'), b: factory('b'), c: factory('c') },
     sceneLayer,
     backgroundLayer,
     fadeOverlay,
     fadeDurationMs: FADE_MS,
+    assets: bundles,
+    loading,
+    loadingDelayMs: LOADING_DELAY_MS,
     getLayout: () => layout,
-    context: { renderer: { name: 'test', resolution: 1 } },
+    context: {
+      renderer: { name: 'test', resolution: 1 },
+      assets: {
+        get: () => {
+          throw new Error('テストでは使わない');
+        },
+      },
+    },
     onError,
   });
   const rotate = (): Layout => {
@@ -88,7 +157,20 @@ function setup(options: { enterResults?: Partial<Record<Key, Promise<void>>> } =
     manager.resize(layout);
     return layout;
   };
-  return { log, created, contexts, manager, sceneLayer, backgroundLayer, fadeOverlay, onError, rotate, getLayout: () => layout };
+  return {
+    log,
+    created,
+    contexts,
+    manager,
+    sceneLayer,
+    backgroundLayer,
+    fadeOverlay,
+    onError,
+    rotate,
+    bundles,
+    loading,
+    getLayout: () => layout,
+  };
 }
 
 /** 待機中の Promise のコールバックを実行させる */
@@ -97,7 +179,7 @@ function flushPromises(): Promise<void> {
 }
 
 /** フェード1回分の時間を進める */
-function finishFade(manager: SceneManager<Key>): void {
+function finishFade(manager: SceneManager<Key, Layout, Manifest>): void {
   manager.update(FADE_MS);
 }
 
@@ -350,5 +432,125 @@ describe('SceneManager: destroy', () => {
     expect(log.at(-1)).toBe('a.exit');
     expect(created.a?.root.destroyed).toBe(true);
     expect(manager.currentKey).toBeNull();
+  });
+});
+
+describe('SceneManager: バンドルの読み込みと解放', () => {
+  it('bundles を読み込んでから enter を呼ぶ', async () => {
+    const { manager, log, bundles } = setup({ bundles: { a: ['bundleA'] } });
+    bundles.hold = true;
+    manager.start('a');
+    expect(log).toEqual(['a.create', 'acquire:bundleA']);
+    manager.update(FADE_MS);
+    expect(log).not.toContain('a.update');
+
+    bundles.flush();
+    await flushPromises();
+    expect(log).toEqual(['a.create', 'acquire:bundleA', 'a.enter', 'a.resize']);
+  });
+
+  it('exit の後に bundles を解放する。旧シーンの解放は新シーンの読み込み後に行う', async () => {
+    const { manager, log, bundles } = setup({ bundles: { a: ['common', 'bundleA'], b: ['common', 'bundleB'] } });
+    manager.start('a');
+    await flushPromises();
+    finishFade(manager);
+    log.length = 0;
+
+    manager.change('b');
+    finishFade(manager);
+    await flushPromises();
+
+    expect(log).toEqual([
+      'a.update',
+      'a.exit',
+      'b.create',
+      'acquire:common',
+      'acquire:bundleB',
+      'release:common',
+      'release:bundleA',
+      'b.enter',
+      'b.resize',
+    ]);
+    // 両方で使う common は解放されずに残る(参照数が 0 にならない)
+    expect(bundles.refCounts.get('common')).toBe(1);
+    expect(bundles.refCounts.get('bundleA')).toBe(0);
+    expect(bundles.refCounts.get('bundleB')).toBe(1);
+  });
+
+  it('読み込みが長引いたら読み込み中表示を出し、進捗を伝え、読み込み後に隠す', async () => {
+    const { manager, bundles, loading } = setup({ bundles: { a: ['bundleA'] } });
+    bundles.hold = true;
+    manager.start('a');
+
+    manager.update(LOADING_DELAY_MS - 1);
+    expect(loading.show).not.toHaveBeenCalled();
+
+    bundles.report(0.5);
+    manager.update(1);
+    expect(loading.show).toHaveBeenLastCalledWith(0.5);
+
+    bundles.flush();
+    await flushPromises();
+    expect(loading.hide).toHaveBeenCalledTimes(1);
+  });
+
+  it('すぐに読み込めた場合は読み込み中表示を出さない', async () => {
+    const { manager, loading } = setup({ bundles: { a: ['bundleA'] } });
+    manager.start('a');
+    await flushPromises();
+    finishFade(manager);
+    expect(loading.show).not.toHaveBeenCalled();
+    expect(loading.hide).not.toHaveBeenCalled();
+  });
+
+  it('読み込み中の切り替え要求は保留し、表示してから切り替える(読み込みは中断しない)', async () => {
+    const { manager, bundles } = setup({ bundles: { a: ['bundleA'], b: ['bundleB'] } });
+    bundles.hold = true;
+    manager.start('a');
+    manager.change('b');
+    expect(manager.currentKey).toBe('a');
+
+    bundles.flush();
+    await flushPromises();
+    finishFade(manager); // a のフェードイン完了 → b へのフェードアウト開始
+    expect(manager.isTransitioning).toBe(true);
+    finishFade(manager);
+    await flushPromises();
+    finishFade(manager);
+    expect(manager.currentKey).toBe('b');
+    expect(bundles.refCounts.get('bundleA')).toBe(0);
+  });
+
+  it('読み込み中に回転した場合、完了時に最新のレイアウトで配置し、フェードを省略する', async () => {
+    const { manager, bundles, created, fadeOverlay, rotate } = setup({ bundles: { a: ['bundleA'] } });
+    bundles.hold = true;
+    manager.start('a');
+    const layout = rotate();
+    expect(created.a?.resizedWith).toEqual([]);
+
+    bundles.flush();
+    await flushPromises();
+    expect(created.a?.resizedWith).toEqual([layout]);
+    expect(fadeOverlay.alpha).toBe(0);
+    expect(manager.isTransitioning).toBe(false);
+  });
+
+  it('読み込み中に destroy されたら、enter を呼ばずに bundles を解放する', async () => {
+    const { manager, bundles, log } = setup({ bundles: { a: ['bundleA'] } });
+    bundles.hold = true;
+    manager.start('a');
+    manager.destroy();
+    expect(bundles.refCounts.get('bundleA')).toBe(0);
+    bundles.flush();
+    await flushPromises();
+    expect(log).not.toContain('a.enter');
+  });
+
+  it('読み込みが失敗したらエラーが通知される', async () => {
+    const { manager, bundles, onError } = setup({ bundles: { a: ['bundleA'] } });
+    bundles.failNext = true;
+    manager.start('a');
+    await flushPromises();
+    expect(onError).toHaveBeenCalledTimes(1);
   });
 });

@@ -11,12 +11,22 @@
 
 ## 現在の状態
 
-**Phase 2-1(レイアウト・シーン管理)**。起動するとデモシーンAが表示されます。
+**Phase 2-2(アセット管理・デバッグ表示)**。起動するとデモシーンAが表示されます。
 
-- デモシーンA: レイアウト定義の領域(黄色の枠)・基準点(桃色の点)・セーフエリア(緑の枠)と、レンダラ名・画面サイズ・devicePixelRatio・向きなどを表示
-- デモシーンB: 別の色の画面。中央で四角が回る
-- 画面をタップすると A と B がフェードで切り替わる
-- URL に `?safearea=40,0,24,0`(上,右,下,左。CSS ピクセル)を付けると、セーフエリアを仮の値で確認できる
+- デモシーンA: レイアウト定義の領域(黄色の枠)・基準点(桃色の点)・セーフエリア(緑の枠)、レンダラ名・画面サイズ・devicePixelRatio・向きなど、バンドル demoA の画像を表示
+- デモシーンB: 別の色の画面。バンドル demoB の画像が中央で回る
+- 画面をタップすると A と B がフェードで切り替わる(切り替えのたびにバンドルを読み込み・解放する)
+
+### デバッグ用の URL パラメータ
+
+URL の末尾に `?debug` を付けると、画面の右上にデバッグ表示(FPS・推定テクスチャメモリ・表示オブジェクト数・向きと論理解像度・読み込み済みのバンドルと参照数)が出ます。
+`?debug` と一緒に、次のパラメータを `&` でつないで使えます(`?debug` がないときは無視されます)。
+
+| パラメータ | 例 | 内容 |
+|---|---|---|
+| `safearea` | `?debug&safearea=40,0,24,0` | セーフエリアを上,右,下,左(CSS ピクセル)で上書きする |
+| `assetfail` | `?debug&assetfail=demoB` | 指定したバンドルの読み込みをわざと失敗させる(代わりの画像の確認用) |
+| `assetdelay` | `?debug&assetdelay=2000` | アセット1つごとに読み込みを遅らせる(読み込み中表示の確認用。ミリ秒) |
 
 ## 使い方
 
@@ -63,9 +73,13 @@ src/
   core/                     汎用基盤(外部依存なし)。SeededRng など
   data/                     ゲームデータ(雛形では README のみ)
   systems/                  純粋なゲームロジック(雛形では README のみ)
+  services/assets/          AssetManager・マニフェストの型・Pixi での画像の読み込み
   services/layout/          LayoutManager・配置計算・セーフエリアの取得
+  presentation/debug/       デバッグ表示(?debug)
+  presentation/loading/     読み込み中表示
   presentation/scenes/      シーンの型(Scene.ts)
   presentation/scenes/demo/ デモ(ゲームを作るときはフォルダごと削除する)
+public/assets/              画像などのアセット(マニフェストに登録して使う)
 tests/                      Vitest のテスト
 .github/workflows/          CI(ci.yml)と公開(deploy.yml)
 ```

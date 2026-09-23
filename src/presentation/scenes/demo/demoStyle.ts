@@ -18,6 +18,8 @@ export const DEMO_STYLE = {
   anchorRadius: 8,
   /** ラベルと枠線・点の間隔 */
   labelPadding: 6,
+  /** 画像の大きさ(main の短い辺に対する割合) */
+  pictureRatio: 0.3,
   sceneA: {
     /** 余白を含む画面全体の色 */
     screenColor: 0x12141d,
@@ -31,9 +33,7 @@ export const DEMO_STYLE = {
   sceneB: {
     screenColor: 0x0e2a2a,
     logicalColor: 0x164040,
-    accentColor: 0x6be3d0,
-    /** 回る四角の一辺と回転速度(ラジアン/秒) */
-    squareSize: 160,
+    /** 画像の回転速度(ラジアン/秒) */
     rotationSpeed: 1.5,
   },
 } as const;

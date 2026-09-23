@@ -7,10 +7,11 @@
 import type { SceneRegistry } from '../Scene';
 import { DemoSceneA } from './DemoSceneA';
 import { DemoSceneB } from './DemoSceneB';
+import { demoManifest, type DemoManifest } from './demoAssets';
 import { demoLayout, type DemoLayout } from './demoLayout';
 import type { DemoSceneKey } from './demoSceneKeys';
 
-const demoScenes: SceneRegistry<DemoSceneKey, DemoLayout> = {
+const demoScenes: SceneRegistry<DemoSceneKey, DemoLayout, DemoManifest> = {
   demoA: (context) => new DemoSceneA(context),
   demoB: (context) => new DemoSceneB(context),
 };
@@ -18,4 +19,4 @@ const demoScenes: SceneRegistry<DemoSceneKey, DemoLayout> = {
 const firstScene: DemoSceneKey = 'demoA';
 
 /** Game.start に渡す内容 */
-export const demoGame = { layout: demoLayout, scenes: demoScenes, firstScene };
+export const demoGame = { layout: demoLayout, manifest: demoManifest, scenes: demoScenes, firstScene };

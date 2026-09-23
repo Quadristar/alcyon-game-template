@@ -1,64 +1,58 @@
 /**
- * SceneManager: シーンの生成・切り替え・破棄を管理する。
+ * SceneManager: シーンの生成・切り替え・アセットの読み込みと解放・破棄を管理する。
  *
  * 切り替えの流れ(フェードは fadeOverlay の alpha を ticker の経過時間で変える):
- *   フェードアウト → 旧シーンの exit と破棄 → 新シーンの生成・enter → resize → フェードイン
+ *   フェードアウト → 旧シーンの exit と破棄 → 新シーンの生成 → bundles の読み込み
+ *   → 旧シーンの bundles を解放 → enter → resize → フェードイン
+ * 旧シーンの bundles は、新シーンの読み込み後に解放する(両方で使うバンドルを読み直さないため)。
+ * 読み込みが loadingDelayMs を超えたら、読み込み中表示を出す。
  *
  * 切り替え中に別の切り替え要求が来た場合(仮仕様):
  * - フェードアウト中: 行き先を新しい要求で上書きする(最新の要求を優先)
- * - enter の完了待ち・フェードイン中: 最新の要求を1つだけ保留し、フェードイン完了後に切り替える
+ * - 読み込み中・enter の完了待ち・フェードイン中: 最新の要求を1つだけ保留し、
+ *   フェードイン完了後に切り替える(読み込みは中断しない)
  * - 切り替え中でないとき、現在のシーンと同じキーの要求は無視する
  *
  * 画面の回転などで resize() が呼ばれたら、進行中のフェードを即座に完了させてから
- * シーンの resize を呼ぶ。
+ * シーンの resize を呼ぶ。読み込み中・enter の完了待ちの場合は、完了時にフェードを省略する。
  */
-import type { Container } from 'pixi.js';
+import type { Scene, SceneContext } from '../presentation/scenes/Scene';
+import type { AssetManifest, BundleName } from '../services/assets/assetTypes';
 import type { Layout } from '../services/layout/layoutTypes';
-import type { Scene, SceneContext, SceneRegistry } from '../presentation/scenes/Scene';
+import { LoadingProgressTracker } from './LoadingProgressTracker';
+import type { SceneManagerOptions } from './sceneManagerTypes';
 
-export interface SceneManagerOptions<K extends string, L extends Layout> {
-  /** キーとシーン生成関数の対応 */
-  readonly scenes: SceneRegistry<K, L>;
-  /** シーンの root を追加する先(論理座標のゲーム用ルート) */
-  readonly sceneLayer: Container;
-  /** シーンの background を追加する先(画面座標の背景レイヤー) */
-  readonly backgroundLayer: Container;
-  /** フェード用の覆い。alpha と visible を SceneManager が操作する */
-  readonly fadeOverlay: Container;
-  /** フェードアウト・フェードインそれぞれの時間(ミリ秒) */
-  readonly fadeDurationMs: number;
-  /** 現在のレイアウトを返す */
-  readonly getLayout: () => L;
-  /** シーンに渡す共通の情報(changeScene 以外) */
-  readonly context: Omit<SceneContext<K>, 'changeScene'>;
-  /** シーンの enter などで例外が起きたときの処理 */
-  readonly onError: (error: unknown) => void;
-}
+export type { LoadingIndicator, SceneBundleLoader, SceneManagerOptions } from './sceneManagerTypes';
 
 /** 切り替えの段階 */
-type Phase = 'idle' | 'fadeOut' | 'entering' | 'fadeIn';
+type Phase = 'idle' | 'fadeOut' | 'loading' | 'entering' | 'fadeIn';
 
-interface ActiveScene<K extends string, L extends Layout> {
+interface ActiveScene<K extends string, L extends Layout, M extends AssetManifest> {
   readonly key: K;
-  readonly scene: Scene<L>;
+  readonly scene: Scene<L, M>;
+  readonly bundles: readonly BundleName<M>[];
   /** 最後に resize() に渡したレイアウト(同じレイアウトで二重に呼ばないため) */
   layout: L | null;
 }
 
-export class SceneManager<K extends string, L extends Layout = Layout> {
-  private active: ActiveScene<K, L> | null = null;
+export class SceneManager<K extends string, L extends Layout = Layout, M extends AssetManifest = AssetManifest> {
+  private active: ActiveScene<K, L, M> | null = null;
   private phase: Phase = 'idle';
   private elapsedMs = 0;
   /** フェードアウト後に切り替える先 */
   private target: K | null = null;
   /** 切り替え中に来た次の要求(最新の1つだけ) */
   private queued: K | null = null;
-  /** enter の完了待ち中に回転した場合、フェードインを省略する */
+  /** 読み込み・enter の完了待ち中に回転した場合、フェードインを省略する */
   private skipFadeIn = false;
-  private readonly context: SceneContext<K>;
+  /** 新しいシーンの読み込み後に解放する、旧シーンのバンドル */
+  private pendingRelease: BundleName<M>[] = [];
+  private readonly loading: LoadingProgressTracker;
+  private readonly context: SceneContext<K, M>;
 
-  constructor(private readonly options: SceneManagerOptions<K, L>) {
+  constructor(private readonly options: SceneManagerOptions<K, L, M>) {
     this.context = { ...options.context, changeScene: (key) => this.change(key) };
+    this.loading = new LoadingProgressTracker(options.loading, options.loadingDelayMs);
     this.setOverlay(1);
   }
 
@@ -96,6 +90,7 @@ export class SceneManager<K extends string, L extends Layout = Layout> {
       case 'fadeOut':
         this.target = key;
         return;
+      case 'loading':
       case 'entering':
       case 'fadeIn':
         this.queued = key;
@@ -103,9 +98,9 @@ export class SceneManager<K extends string, L extends Layout = Layout> {
     }
   }
 
-  /** 毎フレーム呼ぶ。現在のシーンの update とフェードを進める */
+  /** 毎フレーム呼ぶ。現在のシーンの update とフェード・読み込み中表示を進める */
   update(deltaMs: number): void {
-    if (this.active !== null && this.phase !== 'entering') {
+    if (this.active !== null && (this.phase === 'idle' || this.phase === 'fadeOut' || this.phase === 'fadeIn')) {
       this.active.scene.update(deltaMs);
     }
     if (this.phase === 'fadeOut') {
@@ -115,6 +110,8 @@ export class SceneManager<K extends string, L extends Layout = Layout> {
       if (t >= 1) {
         this.swap();
       }
+    } else if (this.phase === 'loading') {
+      this.loading.update(deltaMs);
     } else if (this.phase === 'fadeIn') {
       this.elapsedMs += deltaMs;
       const t = this.progress();
@@ -134,12 +131,11 @@ export class SceneManager<K extends string, L extends Layout = Layout> {
     this.resizeActive(layout);
   }
 
-  /** 現在のシーンを終了・破棄する(ゲームの終了時用) */
+  /** 現在のシーンを終了・破棄し、バンドルを解放する(ゲームの終了時用) */
   destroy(): void {
-    if (this.active !== null) {
-      this.disposeScene(this.active.scene);
-      this.active = null;
-    }
+    this.disposeActive();
+    this.releasePending();
+    this.loading.finish();
     this.phase = 'idle';
     this.target = null;
     this.queued = null;
@@ -151,8 +147,8 @@ export class SceneManager<K extends string, L extends Layout = Layout> {
     if (this.phase === 'fadeOut') {
       this.swap();
     }
-    if (this.phase === 'entering') {
-      // enter の完了を待っている間は完了させられないため、完了時にフェードインを省略する
+    if (this.phase === 'loading' || this.phase === 'entering') {
+      // 完了を待っている間は完了させられないため、完了時にフェードインを省略する
       this.skipFadeIn = true;
       return;
     }
@@ -161,36 +157,68 @@ export class SceneManager<K extends string, L extends Layout = Layout> {
     }
   }
 
-  /** 旧シーンを終了・破棄し、新シーンを生成して enter を呼ぶ */
+  /** 旧シーンを終了・破棄し、新シーンを生成してバンドルを読み込む */
   private swap(): void {
     const key = this.target;
     this.target = null;
     if (key === null) {
       return;
     }
-    if (this.active !== null) {
-      this.disposeScene(this.active.scene);
-      this.active = null;
-    }
+    this.disposeActive();
     this.setOverlay(1);
-    this.phase = 'entering';
+    this.phase = 'loading';
     this.elapsedMs = 0;
 
-    let scene: Scene<L>;
-    let entered: void | Promise<void>;
+    let scene: Scene<L, M>;
     try {
       scene = this.options.scenes[key](this.context);
       this.options.sceneLayer.addChild(scene.root);
       if (scene.background !== undefined) {
         this.options.backgroundLayer.addChild(scene.background);
       }
-      this.active = { key, scene, layout: null };
-      entered = scene.enter();
+      this.active = { key, scene, bundles: scene.bundles ?? [], layout: null };
     } catch (error) {
       this.options.onError(error);
       return;
     }
 
+    const bundles = this.active.bundles;
+    if (bundles.length === 0) {
+      this.releasePending();
+      this.beginEnter(scene);
+      return;
+    }
+    this.loading.begin(bundles);
+    Promise.all(
+      bundles.map((bundle) => this.options.assets.acquire(bundle, (p) => this.loading.setProgress(bundle, p))),
+    ).then(
+      () => {
+        this.releasePending();
+        this.beginEnter(scene);
+      },
+      (error: unknown) => {
+        this.releasePending();
+        this.options.onError(error);
+      },
+    );
+  }
+
+  /** 読み込みの完了後: enter を呼ぶ */
+  private beginEnter(scene: Scene<L, M>): void {
+    // 待っている間に破棄された場合は何もしない
+    if (this.active?.scene !== scene || this.phase !== 'loading') {
+      return;
+    }
+    this.loading.finish();
+    this.phase = 'entering';
+
+    let entered: void | Promise<void>;
+    try {
+      entered = scene.enter();
+    } catch (error) {
+      this.options.onError(error);
+      return;
+    }
     if (entered instanceof Promise) {
       entered.then(
         () => this.afterEnter(scene),
@@ -202,8 +230,7 @@ export class SceneManager<K extends string, L extends Layout = Layout> {
   }
 
   /** enter の完了後: 配置してフェードインを始める */
-  private afterEnter(scene: Scene<L>): void {
-    // 待っている間に破棄された場合は何もしない
+  private afterEnter(scene: Scene<L, M>): void {
     if (this.active?.scene !== scene || this.phase !== 'entering') {
       return;
     }
@@ -230,22 +257,34 @@ export class SceneManager<K extends string, L extends Layout = Layout> {
 
   private resizeActive(layout: L): void {
     const active = this.active;
-    if (active === null || this.phase === 'entering' || active.layout === layout) {
+    if (active === null || this.phase === 'loading' || this.phase === 'entering' || active.layout === layout) {
       return;
     }
     active.layout = layout;
     active.scene.resize(layout);
   }
 
-  /** シーンの exit を呼び、表示物を子要素ごと確実に破棄する */
-  private disposeScene(scene: Scene<L>): void {
+  /** 現在のシーンの exit を呼んで表示物を破棄し、そのバンドルを解放待ちにする */
+  private disposeActive(): void {
+    const active = this.active;
+    if (active === null) {
+      return;
+    }
+    this.active = null;
+    this.pendingRelease.push(...active.bundles);
     try {
-      scene.exit();
+      active.scene.exit();
     } catch (error) {
       this.options.onError(error);
     } finally {
-      scene.root.destroy({ children: true });
-      scene.background?.destroy({ children: true });
+      active.scene.root.destroy({ children: true });
+      active.scene.background?.destroy({ children: true });
+    }
+  }
+
+  private releasePending(): void {
+    for (const bundle of this.pendingRelease.splice(0)) {
+      this.options.assets.release(bundle);
     }
   }
 
