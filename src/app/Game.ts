@@ -1,62 +1,78 @@
 /**
  * Game: 起動処理と各層の接続。
  *
+ * - セーブと設定を読み込む(品質プリセットから描画解像度を決めるため、最初に行う)
  * - Pixi Application を WebGL 固定で生成する
  * - AssetManager を作り、boot バンドルを読み込む(失敗したら起動エラー)
  * - 描画の構成(背面から順に):
  *     背景レイヤー(画面座標。余白を含む画面全体を覆う)
  *     ゲーム用ルート(論理座標。LayoutManager の拡大率と余白に合わせて拡大縮小・移動する)
- *     フェード用の覆い(画面座標。切り替え中は入力も遮る)
+ *     フェード用の覆い(画面座標)
  *     読み込み中表示(論理座標)
  *     デバッグ表示(画面座標。?debug のときだけ)
+ * - InputManager でキャンバスへの入力を受け、論理座標にしてシーンに渡す
  * - LayoutManager に画面サイズとセーフエリアを渡し、変化したら各層とシーンを配置し直す
+ * - 品質プリセットが変わったら、描画解像度を実行中に切り替える
  * - SceneManager を ticker で動かし、最初のシーンを開始する
  *
- * ゲームのルールやシーンの中身は知らない。レイアウト定義・マニフェスト・シーンは外から受け取る。
+ * ゲームのルールやシーンの中身は知らない。レイアウト定義・マニフェスト・セーブの形式・シーンは外から受け取る。
  */
 import { Application, Container, Graphics, type Texture, WebGLRenderer } from 'pixi.js';
 import { DebugOverlay } from '../presentation/debug/DebugOverlay';
 import { parseDebugOptions } from '../presentation/debug/debugOptions';
 import { countDisplayObjects } from '../presentation/debug/debugStats';
 import { LoadingView } from '../presentation/loading/LoadingView';
-import type { SceneRegistry } from '../presentation/scenes/Scene';
+import type { RendererInfo, SceneRegistry } from '../presentation/scenes/Scene';
 import type { AssetManager } from '../services/assets/AssetManager';
 import type { AssetManifest } from '../services/assets/assetTypes';
+import { attachPointerInput } from '../services/input/attachPointerInput';
+import { InputManager } from '../services/input/InputManager';
+import { screenToLogical } from '../services/layout/computeLayout';
 import { LayoutManager } from '../services/layout/LayoutManager';
 import type { Layout, LayoutDefinition, ScreenInput } from '../services/layout/layoutTypes';
 import { SafeAreaProbe } from '../services/layout/SafeAreaProbe';
+import type { SaveSchema } from '../services/save/saveTypes';
+import { renderResolution } from '../services/settings/quality';
 import { createAssetManager } from './createAssetManager';
+import { createPersistence } from './createPersistence';
 import { GAME_CONFIG } from './gameConfig';
 import { RENDER_CONFIG } from './renderConfig';
 import { SceneManager } from './SceneManager';
 import { showBootError } from './showBootError';
 
 /** ゲームごとに渡す内容 */
-export interface GameOptions<K extends string, R extends string, A extends string, M extends AssetManifest> {
+export interface GameOptions<K extends string, R extends string, A extends string, M extends AssetManifest, D> {
   /** レイアウト定義 */
   readonly layout: LayoutDefinition<R, A>;
   /** アセットのマニフェスト */
   readonly manifest: M;
+  /** ゲームのセーブデータの形式 */
+  readonly save: SaveSchema<D>;
   /** キーとシーン生成関数の対応 */
-  readonly scenes: SceneRegistry<K, Layout<R, A>, M>;
+  readonly scenes: SceneRegistry<K, Layout<R, A>, M, D>;
   /** 最初に表示するシーン */
   readonly firstScene: K;
 }
 
-export class Game<K extends string, R extends string, A extends string, M extends AssetManifest> {
+export class Game<K extends string, R extends string, A extends string, M extends AssetManifest, D> {
   private constructor(
     readonly app: Application,
     readonly layout: LayoutManager<R, A>,
     readonly assets: AssetManager<M, Texture>,
-    readonly scenes: SceneManager<K, Layout<R, A>, M>,
+    readonly input: InputManager,
+    readonly scenes: SceneManager<K, Layout<R, A>, M, D>,
   ) {}
 
   /** ゲームを起動する。root 要素にキャンバスを追加する */
-  static async start<K extends string, R extends string, A extends string, M extends AssetManifest>(
+  static async start<K extends string, R extends string, A extends string, M extends AssetManifest, D>(
     root: HTMLElement,
-    options: GameOptions<K, R, A, M>,
-  ): Promise<Game<K, R, A, M>> {
+    options: GameOptions<K, R, A, M, D>,
+  ): Promise<Game<K, R, A, M, D>> {
     const debug = parseDebugOptions(window.location.search);
+    const { save, settings } = createPersistence(debug);
+    const gameSave = save.open(options.save);
+    const resolutionFor = (): number =>
+      renderResolution(window.devicePixelRatio, settings.quality, RENDER_CONFIG.quality);
 
     const app = new Application();
     await app.init({
@@ -65,7 +81,7 @@ export class Game<K extends string, R extends string, A extends string, M extend
       preference: ['webgl'],
       resizeTo: window,
       background: RENDER_CONFIG.backgroundColor,
-      resolution: Math.min(window.devicePixelRatio || 1, RENDER_CONFIG.maxResolution),
+      resolution: resolutionFor(),
       autoDensity: true,
       antialias: RENDER_CONFIG.antialias,
     });
@@ -75,6 +91,20 @@ export class Game<K extends string, R extends string, A extends string, M extend
       throw new Error(`WebGL 以外のレンダラが選ばれました: ${renderer.name}`);
     }
     root.appendChild(app.canvas);
+
+    // 品質プリセットが変わったら、描画解像度を切り替える(文字なども新しい解像度で描き直される)
+    settings.onChange(() => {
+      const resolution = resolutionFor();
+      if (resolution !== renderer.resolution) {
+        renderer.resize(app.screen.width, app.screen.height, resolution);
+      }
+    });
+    const rendererInfo: RendererInfo = {
+      name: `WebGL ${renderer.context.webGLVersion}`,
+      get resolution() {
+        return renderer.resolution;
+      },
+    };
 
     // アセット: 起動時は boot バンドルだけを読み込む(失敗したら例外になり、main.ts でエラー表示する)
     const assets = createAssetManager(options.manifest, debug);
@@ -87,7 +117,6 @@ export class Game<K extends string, R extends string, A extends string, M extend
     const backgroundLayer = new Container({ label: 'backgroundLayer' });
     const gameRoot = new Container({ label: 'gameRoot' });
     const fadeOverlay = new Graphics({ label: 'fadeOverlay' });
-    fadeOverlay.eventMode = 'static';
     const loadingRoot = new Container({ label: 'loadingRoot' });
     const loadingView = new LoadingView();
     loadingRoot.addChild(loadingView);
@@ -102,6 +131,13 @@ export class Game<K extends string, R extends string, A extends string, M extend
     });
     const layout = new LayoutManager(GAME_CONFIG.logicalSizes, options.layout, measure());
 
+    // 入力: キャンバス上の操作を、論理座標にしてシーンに渡す
+    const input = new InputManager({
+      thresholds: GAME_CONFIG.input.thresholds,
+      toLogical: (point) => screenToLogical(layout.current, point),
+    });
+    attachPointerInput(app.canvas, input);
+
     // デバッグ表示(?debug のときだけ生成する)
     const debugOverlay = debug.enabled
       ? new DebugOverlay({
@@ -114,6 +150,9 @@ export class Game<K extends string, R extends string, A extends string, M extend
             scale: layout.current.scale,
             bundles: assets.getBundleStatuses(),
             assetFailures: assets.failures.length,
+            quality: settings.quality,
+            resolution: renderer.resolution,
+            saveStatus: save.status,
           }),
         })
       : null;
@@ -133,19 +172,22 @@ export class Game<K extends string, R extends string, A extends string, M extend
     applyLayout(layout.current);
 
     // シーン
-    const scenes = new SceneManager<K, Layout<R, A>, M>({
+    const scenes = new SceneManager<K, Layout<R, A>, M, D>({
       scenes: options.scenes,
       sceneLayer: gameRoot,
       backgroundLayer,
       fadeOverlay,
       fadeDurationMs: GAME_CONFIG.fadeDurationMs,
       assets,
+      input,
       loading: loadingView,
       loadingDelayMs: GAME_CONFIG.loadingDelayMs,
       getLayout: () => layout.current,
       context: {
-        renderer: { name: `WebGL ${renderer.context.webGLVersion}`, resolution: renderer.resolution },
+        renderer: rendererInfo,
         assets: { get: (bundle, key) => assets.get(bundle, key) },
+        save: gameSave,
+        settings,
       },
       onError: (error) => {
         app.ticker.stop();
@@ -176,6 +218,10 @@ export class Game<K extends string, R extends string, A extends string, M extend
     });
 
     scenes.start(options.firstScene);
-    return new Game(app, layout, assets, scenes);
+    // ?debug&quality=… … 実行中に品質を切り替える(実行中の反映の確認用)
+    if (debug.quality !== null) {
+      settings.setQuality(debug.quality);
+    }
+    return new Game(app, layout, assets, input, scenes);
   }
 }

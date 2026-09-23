@@ -4,7 +4,7 @@ import { DEBUG_DISABLED, parseDebugOptions } from '../../../src/presentation/deb
 describe('parseDebugOptions', () => {
   it('?debug がなければ無効で、ほかのパラメータも無視する', () => {
     expect(parseDebugOptions('')).toEqual(DEBUG_DISABLED);
-    expect(parseDebugOptions('?safearea=40,0,24,0&assetfail=a&assetdelay=500')).toEqual(DEBUG_DISABLED);
+    expect(parseDebugOptions('?safearea=40,0,24,0&assetfail=a&assetdelay=500&quality=low&savefail')).toEqual(DEBUG_DISABLED);
   });
 
   it('?debug だけなら有効で、上書きなし', () => {
@@ -33,5 +33,17 @@ describe('parseDebugOptions', () => {
     expect(parseDebugOptions('?debug&assetdelay=abc').assetDelayMs).toBe(0);
     expect(parseDebugOptions('?debug&assetdelay=-5').assetDelayMs).toBe(0);
     expect(parseDebugOptions('?debug&assetdelay=999999').assetDelayMs).toBe(10_000);
+  });
+
+  it('quality は low / medium / high のどれか。それ以外は null', () => {
+    expect(parseDebugOptions('?debug&quality=low').quality).toBe('low');
+    expect(parseDebugOptions('?debug&quality=high').quality).toBe('high');
+    expect(parseDebugOptions('?debug&quality=ultra').quality).toBeNull();
+    expect(parseDebugOptions('?debug').quality).toBeNull();
+  });
+
+  it('savefail があれば保存を失敗させる', () => {
+    expect(parseDebugOptions('?debug&savefail').saveFail).toBe(true);
+    expect(parseDebugOptions('?debug').saveFail).toBe(false);
   });
 });
