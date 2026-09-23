@@ -1,11 +1,12 @@
 /**
  * デモシーンB: 別の色の簡単な画面。
  * バンドル demoB の画像が中央で回り続ける(update が毎フレーム呼ばれていることの確認用)。
- * 画面をタップするとデモシーンAへ戻る。
+ * 画面をタップするとデモシーンAへ戻る(タップ回数を数えて保存する)。
  */
 import { Container, Graphics, Sprite, Text } from 'pixi.js';
 import type { Scene, SceneContext } from '../Scene';
 import type { DemoManifest } from './demoAssets';
+import { addTap, type DemoSave } from './demoSave';
 import type { DemoLayout } from './demoLayout';
 import { fitPicture } from './fitPicture';
 import { DEMO_STYLE } from './demoStyle';
@@ -26,11 +27,11 @@ export class DemoSceneB implements Scene<DemoLayout, DemoManifest> {
     style: { fontFamily: S.fontFamily, fontSize: S.titleFontSize, fill: S.textColor },
   });
   private readonly hint = new Text({
-    text: 'タップで Demo A へ',
+    text: '',
     style: { fontFamily: S.fontFamily, fontSize: S.hintFontSize, fill: S.textColor },
   });
 
-  constructor(private readonly context: SceneContext<DemoSceneKey, DemoManifest>) {}
+  constructor(private readonly context: SceneContext<DemoSceneKey, DemoManifest, DemoSave>) {}
 
   enter(): void {
     this.picture = new Sprite(this.context.assets.get('demoB', 'shapes'));
@@ -39,13 +40,17 @@ export class DemoSceneB implements Scene<DemoLayout, DemoManifest> {
     this.hint.anchor.set(0.5);
     this.root.addChild(this.logicalArea, this.picture, this.title, this.hint);
 
-    this.background.eventMode = 'static';
-    this.background.cursor = 'pointer';
-    this.background.on('pointertap', () => this.context.changeScene('demoA'));
+    this.hint.text = `タップで Demo A へ(これまで ${this.context.save.get().tapCount} 回)`;
+    this.context.input.on((event) => {
+      if (event.type === 'tap') {
+        addTap(this.context.save);
+        this.context.changeScene('demoA');
+      }
+    });
   }
 
   exit(): void {
-    this.background.removeAllListeners();
+    // 入力の解除・表示物の破棄は SceneManager が行う
   }
 
   update(deltaMs: number): void {

@@ -5,11 +5,14 @@
  * - レイアウト定義の領域を枠線と名前で、基準点を点と名前で表示する
  * - レンダラ名・画面サイズ・devicePixelRatio・向きなどを info 領域に表示する
  * - バンドル demoA の画像を表示する(このシーンに入るときに読み込まれ、出るときに解放される)
+ * - タップ回数(保存され、再読み込み後も残る)と、最後のスワイプの方向・開始位置を表示する
  * - 画面をタップするとデモシーンBへ切り替える
  */
 import { Container, Graphics, Sprite, Text } from 'pixi.js';
+import type { InputEvent, SwipeEvent } from '../../../services/input/inputTypes';
 import type { Scene, SceneContext } from '../Scene';
 import type { DemoManifest } from './demoAssets';
+import { addTap, type DemoSave } from './demoSave';
 import type { DemoLayout } from './demoLayout';
 import { fitPicture } from './fitPicture';
 import { DEMO_STYLE } from './demoStyle';
@@ -19,6 +22,7 @@ const S = DEMO_STYLE;
 const COLORS = S.sceneA;
 
 const ORIENTATION_LABEL = { portrait: '縦', landscape: '横' } as const;
+const DIRECTION_LABEL = { up: '↑ 上', down: '↓ 下', left: '← 左', right: '→ 右' } as const;
 
 /** 小数を最大2桁で表示する */
 function round2(value: number): string {
@@ -35,6 +39,8 @@ export class DemoSceneA implements Scene<DemoLayout, DemoManifest> {
   readonly background = new Graphics({ label: 'DemoSceneA.background' });
 
   private readonly guides = new Graphics();
+  /** 最後のスワイプの軌跡(開始位置の点と、終了位置への線) */
+  private readonly swipeMark = new Graphics();
   private readonly labels = new Container();
   private readonly info = new Text({
     text: '',
@@ -43,8 +49,10 @@ export class DemoSceneA implements Scene<DemoLayout, DemoManifest> {
   private readonly title = label('Demo A', S.textColor, S.titleFontSize);
   private readonly hint = label('タップで Demo B へ', S.textColor, S.hintFontSize);
   private picture: Sprite | null = null;
+  private lastSwipe: SwipeEvent | null = null;
+  private layout: DemoLayout | null = null;
 
-  constructor(private readonly context: SceneContext<DemoSceneKey, DemoManifest>) {}
+  constructor(private readonly context: SceneContext<DemoSceneKey, DemoManifest, DemoSave>) {}
 
   enter(): void {
     this.title.anchor.set(0.5);
@@ -53,16 +61,37 @@ export class DemoSceneA implements Scene<DemoLayout, DemoManifest> {
     this.picture = new Sprite(this.context.assets.get('demoA', 'shapes'));
     this.picture.anchor.set(0.5);
     // 名前のラベルは最前面に置く
-    this.root.addChild(this.guides, this.picture, this.info, this.title, this.hint, this.labels);
+    this.root.addChild(this.guides, this.picture, this.swipeMark, this.info, this.title, this.hint, this.labels);
 
-    // 背景は画面全体を覆うため、どこをタップしても反応する
-    this.background.eventMode = 'static';
-    this.background.cursor = 'pointer';
-    this.background.on('pointertap', () => this.context.changeScene('demoB'));
+    // 入力の登録は exit の後に自動で解除されるため、解除の処理は書かなくてよい
+    this.context.input.on((event) => this.onInput(event));
   }
 
   exit(): void {
-    this.background.removeAllListeners();
+    // 入力の解除・表示物の破棄は SceneManager が行う
+  }
+
+  private onInput(event: InputEvent): void {
+    if (event.type === 'tap') {
+      addTap(this.context.save);
+      this.context.changeScene('demoB');
+    } else if (event.type === 'swipe') {
+      this.lastSwipe = event;
+      this.drawSwipe(event);
+      if (this.layout !== null) {
+        this.info.text = this.infoText(this.layout);
+      }
+    }
+  }
+
+  private drawSwipe(swipe: SwipeEvent): void {
+    this.swipeMark
+      .clear()
+      .moveTo(swipe.start.x, swipe.start.y)
+      .lineTo(swipe.end.x, swipe.end.y)
+      .stroke({ width: S.lineWidth * 2, color: COLORS.swipeColor })
+      .circle(swipe.start.x, swipe.start.y, S.anchorRadius * 2)
+      .fill(COLORS.swipeColor);
   }
 
   update(): void {
@@ -70,6 +99,9 @@ export class DemoSceneA implements Scene<DemoLayout, DemoManifest> {
   }
 
   resize(layout: DemoLayout): void {
+    this.layout = layout;
+    // 向きが変わると論理座標も変わるため、スワイプの軌跡は消す
+    this.swipeMark.clear();
     this.background.clear().rect(0, 0, layout.screen.width, layout.screen.height).fill(COLORS.screenColor);
     this.drawGuides(layout);
     this.drawLabels(layout);
@@ -139,6 +171,16 @@ export class DemoSceneA implements Scene<DemoLayout, DemoManifest> {
       `Orientation: ${ORIENTATION_LABEL[layout.orientation]}`,
       `Logical: ${layout.logical.width} × ${layout.logical.height} (×${round2(layout.scale)})`,
       `SafeArea: ${Math.round(safe.x)}, ${Math.round(safe.y)}, ${Math.round(safe.width)} × ${Math.round(safe.height)}`,
+      `Tap: ${this.context.save.get().tapCount} 回(保存)`,
+      `Swipe: ${this.swipeText()}`,
     ].join('\n');
+  }
+
+  private swipeText(): string {
+    const swipe = this.lastSwipe;
+    if (swipe === null) {
+      return '(まだありません)';
+    }
+    return `${DIRECTION_LABEL[swipe.direction]}(開始 ${Math.round(swipe.start.x)}, ${Math.round(swipe.start.y)})`;
   }
 }
