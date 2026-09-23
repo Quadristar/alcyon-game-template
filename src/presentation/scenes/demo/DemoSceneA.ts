@@ -4,11 +4,14 @@
  * - 余白を含む画面全体(背景)、論理解像度の範囲、セーフエリアを色分けして表示する
  * - レイアウト定義の領域を枠線と名前で、基準点を点と名前で表示する
  * - レンダラ名・画面サイズ・devicePixelRatio・向きなどを info 領域に表示する
+ * - バンドル demoA の画像を表示する(このシーンに入るときに読み込まれ、出るときに解放される)
  * - 画面をタップするとデモシーンBへ切り替える
  */
-import { Container, Graphics, Text } from 'pixi.js';
+import { Container, Graphics, Sprite, Text } from 'pixi.js';
 import type { Scene, SceneContext } from '../Scene';
+import type { DemoManifest } from './demoAssets';
 import type { DemoLayout } from './demoLayout';
+import { fitPicture } from './fitPicture';
 import { DEMO_STYLE } from './demoStyle';
 import type { DemoSceneKey } from './demoSceneKeys';
 
@@ -26,7 +29,8 @@ function label(text: string, color: number, fontSize: number = S.labelFontSize):
   return new Text({ text, style: { fontFamily: S.fontFamily, fontSize, fill: color } });
 }
 
-export class DemoSceneA implements Scene<DemoLayout> {
+export class DemoSceneA implements Scene<DemoLayout, DemoManifest> {
+  readonly bundles = ['demoA'] as const;
   readonly root = new Container({ label: 'DemoSceneA' });
   readonly background = new Graphics({ label: 'DemoSceneA.background' });
 
@@ -38,14 +42,18 @@ export class DemoSceneA implements Scene<DemoLayout> {
   });
   private readonly title = label('Demo A', S.textColor, S.titleFontSize);
   private readonly hint = label('タップで Demo B へ', S.textColor, S.hintFontSize);
+  private picture: Sprite | null = null;
 
-  constructor(private readonly context: SceneContext<DemoSceneKey>) {}
+  constructor(private readonly context: SceneContext<DemoSceneKey, DemoManifest>) {}
 
   enter(): void {
     this.title.anchor.set(0.5);
     this.hint.anchor.set(0.5);
+    // bundles の読み込みは enter の前に完了している
+    this.picture = new Sprite(this.context.assets.get('demoA', 'shapes'));
+    this.picture.anchor.set(0.5);
     // 名前のラベルは最前面に置く
-    this.root.addChild(this.guides, this.info, this.title, this.hint, this.labels);
+    this.root.addChild(this.guides, this.picture, this.info, this.title, this.hint, this.labels);
 
     // 背景は画面全体を覆うため、どこをタップしても反応する
     this.background.eventMode = 'static';
@@ -71,6 +79,9 @@ export class DemoSceneA implements Scene<DemoLayout> {
     this.info.position.set(infoOrigin.x + S.infoPadding, infoOrigin.y + S.infoPadding + S.labelFontSize);
     this.info.text = this.infoText(layout);
     this.title.position.set(layout.anchors.center.x, layout.anchors.center.y);
+    if (this.picture !== null) {
+      fitPicture(this.picture, layout.anchors.picture, layout.regions.main, S.pictureRatio);
+    }
     this.hint.position.set(layout.anchors.hint.x, layout.anchors.hint.y);
   }
 
