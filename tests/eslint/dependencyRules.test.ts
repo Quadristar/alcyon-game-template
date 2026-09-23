@@ -59,6 +59,11 @@ describe('依存ルール: 違反はエラーになる', () => {
     // presentation: core, systems, services, 外部ライブラリ
     ['src/presentation/ui/Button.ts', '../../data/items'],
     ['src/presentation/ui/Button.ts', '../../app/Game'],
+    // デモは main.ts 以外から import できない
+    ['src/app/Game.ts', '../presentation/scenes/demo'],
+    ['src/app/Game.ts', '../presentation/scenes/demo/DemoSceneA'],
+    ['src/presentation/scenes/Scene.ts', './demo/demoLayout'],
+    ['src/presentation/ui/Button.ts', '../scenes/demo'],
   ];
 
   it.each(violations)('%s から %s を import するとエラー', async (file, source) => {
@@ -92,6 +97,9 @@ describe('依存ルール: 許可された import はエラーにならない', 
     ['src/app/Game.ts', 'pixi.js'],
     ['src/app/Game.ts', '../data/items'],
     ['src/app/Game.ts', '../presentation/ui/Button'],
+    ['src/main.ts', './presentation/scenes/demo'],
+    ['src/presentation/scenes/demo/DemoSceneA.ts', './demoLayout'],
+    ['src/presentation/scenes/demo/DemoSceneA.ts', '../Scene'],
   ];
 
   it.each(allowed)('%s から %s を import できる', async (file, source) => {

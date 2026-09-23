@@ -110,6 +110,7 @@ npm run check      # typecheck + lint + test + build をまとめて実行
 
 - `main` は常に動く状態に保つ。直接コミットしない
 - 作業はブランチで行う(例: `feat/scene-manager`, `fix/layout-rotation`)
+- Claude Code のセッションでブランチ名が指定されている場合は、その名前を使ってよい
 - コミットは小さく分け、メッセージは `feat:` / `fix:` / `refactor:` / `test:` / `docs:` / `chore:` で始める
 - 大きな変更の前には、その時点の状態をコミットしておく
 - PR を作成し、CI(型・lint・テスト・ビルド)が通ってからマージする
@@ -151,6 +152,7 @@ npm run check      # typecheck + lint + test + build をまとめて実行
 
 ## 10. 現在のフェーズ
 
-- 現在: **Phase 1(プロジェクト初期構築)**
+- 現在: **Phase 2(共通基盤)**
+  - Phase 2-1: LayoutManager・SceneManager・Game・デモシーン
 - フェーズの一覧と内容は `docs/ARCHITECTURE.md` の「開発フェーズ」を参照
 - フェーズが進んだら、この項目を更新する

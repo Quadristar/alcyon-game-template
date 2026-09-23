@@ -14,6 +14,8 @@
  * | presentation | core, systems(主に型), services, 外部ライブラリ     |
  * | app          | すべて                                               |
  *
+ * デモ(presentation/scenes/demo/)は main.ts 以外から import できない。
+ *
  * 判定方法: src/ 直下の層フォルダを指す相対パス(../data/… など)と、
  * パッケージ名での import(pixi.js など)を正規表現で検出する。
  * 違反が確実にエラーになることは tests/eslint/dependencyRules.test.ts で検証している。
@@ -51,6 +53,16 @@ function forbidPackages(from) {
 }
 
 /**
+ * デモ(presentation/scenes/demo/)への import を禁止するパターン。
+ * デモはフォルダごと削除できるよう、main.ts 以外から参照しない。
+ */
+const FORBID_DEMO = {
+  // `demo` という名前のフォルダを指す import を検出する(./demo/…・../scenes/demo など)
+  regex: '(?:^|/)demo(?:/|$)',
+  message: 'デモ(presentation/scenes/demo/)は main.ts 以外から import できません(フォルダごと削除できるようにするため)。',
+};
+
+/**
  * 層ごとの no-restricted-imports 設定を作る。
  * @param {string} layer 対象の層
  * @param {string[]} allowedLayers import を許可する層
@@ -58,7 +70,7 @@ function forbidPackages(from) {
  */
 function layerRule(layer, allowedLayers, allowPackages) {
   const forbidden = LAYERS.filter((l) => l !== layer && !allowedLayers.includes(l));
-  const patterns = forbidden.map((l) => forbidLayer(l, layer));
+  const patterns = [...forbidden.map((l) => forbidLayer(l, layer)), FORBID_DEMO];
   if (!allowPackages) {
     patterns.push(forbidPackages(layer));
   }
@@ -97,7 +109,8 @@ export default defineConfig(
   layerRule('systems', ['core', 'data'], false),
   layerRule('services', ['core'], true),
   layerRule('presentation', ['core', 'systems', 'services'], true),
-  // app はすべてを import できるため制限なし
+  // app はすべての層を import できる(デモだけは禁止)
+  layerRule('app', LAYERS, true),
 
   // ---- systems は時刻と非決定的な乱数に依存しない ----
   {
