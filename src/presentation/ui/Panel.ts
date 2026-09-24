@@ -3,6 +3,7 @@
  *
  * modal を true にすると、表示中は Panel の外をタップしても背後のボタンやゲーム側に入力を渡さない。
  * setBackdrop() で背後を暗くする範囲(親の座標)を指定できる(画面全体を覆うには layout.visibleArea を渡す)。
+ * 背後を暗くする範囲は見た目だけで、入力を遮る範囲には関係しない(モーダルなら常に全体を遮る)。
  * Panel の上に置くボタンなどは、Panel の子として addChild する。
  */
 import { Container, Graphics } from 'pixi.js';
@@ -54,8 +55,11 @@ export class Panel extends Container implements BlockerTarget {
   setBackdrop(area: Rect | null): void {
     this.backdrop.clear();
     if (area !== null) {
+      // 親の座標を Panel の座標に直す(Panel の拡大縮小・移動を打ち消す。回転は考慮しない)
+      const sx = this.scale.x || 1;
+      const sy = this.scale.y || 1;
       this.backdrop
-        .rect(area.x - this.x, area.y - this.y, area.width, area.height)
+        .rect((area.x - this.x) / sx, (area.y - this.y) / sy, area.width / sx, area.height / sy)
         .fill({ color: S.backdropColor, alpha: S.backdropAlpha });
     }
   }
