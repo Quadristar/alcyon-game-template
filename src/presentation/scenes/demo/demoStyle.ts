@@ -31,6 +31,31 @@ export const DEMO_STYLE = {
     anchorColor: 0xff6b9a,
     swipeColor: 0x7fd4ff,
   },
+  /** デモの設定パネル(論理座標。パネルの中心が原点) */
+  settingsPanel: {
+    width: 600,
+    height: 600,
+    /** セーフエリアの端からの余白(収まらなければ縮小する) */
+    margin: 24,
+    titleY: -240,
+    titleFontSize: 36,
+    buttonWidth: 160,
+    buttonHeight: 72,
+    qualityY: -120,
+    /** 品質ボタンの横の間隔(中心間) */
+    qualityGap: 180,
+    volumeLabelY: 0,
+    volumeY: 70,
+    smallButtonWidth: 80,
+    volumeBarWidth: 280,
+    volumeBarHeight: 20,
+    /** 音量ボタンの中心の、パネル中心からの横の距離 */
+    volumeButtonX: 200,
+    volumeStep: 0.1,
+    closeY: 210,
+    openButtonWidth: 280,
+    openButtonHeight: 80,
+  },
   sceneB: {
     screenColor: 0x0e2a2a,
     logicalColor: 0x164040,
