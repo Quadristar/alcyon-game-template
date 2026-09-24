@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { InputManager } from '../../../src/services/input/InputManager';
 import type { InputEvent } from '../../../src/services/input/inputTypes';
 import { screenToLogical } from '../../../src/services/layout/computeLayout';
@@ -109,5 +109,73 @@ describe('InputManager: 一時停止', () => {
     resumeA();
     resumeA();
     expect(input.isPaused).toBe(true);
+  });
+});
+
+describe('InputManager: ポインタ処理(UI)', () => {
+  function handler(captures: boolean) {
+    return { down: vi.fn(() => captures), move: vi.fn(), up: vi.fn(), cancel: vi.fn() };
+  }
+
+  it('ポインタ処理が独占した指は、ジェスチャーとして通知しない', () => {
+    const { input, events } = setup();
+    const ui = handler(true);
+    input.addPointerHandler(ui);
+    input.pointerDown(1, { x: 5, y: 6 }, 0);
+    input.pointerMove(1, { x: 7, y: 8 });
+    input.pointerUp(1, { x: 9, y: 10 }, 10);
+    expect(ui.down).toHaveBeenCalledWith({ x: 5, y: 6 });
+    expect(ui.move).toHaveBeenCalledWith({ x: 7, y: 8 });
+    expect(ui.up).toHaveBeenCalledWith({ x: 9, y: 10 });
+    expect(events).toEqual([]);
+  });
+
+  it('独占しなかった指は、ジェスチャーとして通知する', () => {
+    const { input, events } = setup();
+    const ui = handler(false);
+    input.addPointerHandler(ui);
+    input.pointerDown(1, { x: 10, y: 20 }, 0);
+    input.pointerUp(1, { x: 10, y: 20 }, 10);
+    expect(events.map((e) => e.type)).toEqual(['tap']);
+    expect(ui.up).not.toHaveBeenCalled();
+  });
+
+  it('後から登録したポインタ処理が先に聞かれる', () => {
+    const { input } = setup();
+    const first = handler(true);
+    const second = handler(true);
+    input.addPointerHandler(first);
+    input.addPointerHandler(second);
+    input.pointerDown(1, { x: 0, y: 0 }, 0);
+    expect(second.down).toHaveBeenCalled();
+    expect(first.down).not.toHaveBeenCalled();
+  });
+
+  it('独占中の2本目の指は無視する', () => {
+    const { input } = setup();
+    const ui = handler(true);
+    input.addPointerHandler(ui);
+    input.pointerDown(1, { x: 0, y: 0 }, 0);
+    input.pointerDown(2, { x: 50, y: 50 }, 5);
+    input.pointerUp(2, { x: 50, y: 50 }, 10);
+    expect(ui.down).toHaveBeenCalledTimes(1);
+    expect(ui.up).not.toHaveBeenCalled();
+  });
+
+  it('pointercancel・一時停止・登録の解除で、独占中の操作を取り消す', () => {
+    const { input } = setup();
+    const ui = handler(true);
+    const off = input.addPointerHandler(ui);
+
+    input.pointerDown(1, { x: 0, y: 0 }, 0);
+    input.pointerCancel(1);
+    input.pointerDown(1, { x: 0, y: 0 }, 0);
+    const resume = input.pause();
+    resume();
+    input.pointerDown(1, { x: 0, y: 0 }, 0);
+    off();
+    expect(ui.cancel).toHaveBeenCalledTimes(3);
+    input.pointerUp(1, { x: 0, y: 0 }, 10);
+    expect(ui.up).not.toHaveBeenCalled();
   });
 });

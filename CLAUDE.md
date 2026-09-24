@@ -155,6 +155,7 @@ npm run check      # typecheck + lint + test + build をまとめて実行
 - 現在: **Phase 2(共通基盤)**
   - Phase 2-1: LayoutManager・SceneManager・Game・デモシーン(完了)
   - Phase 2-2: AssetManager・デバッグ表示(完了)
-  - Phase 2-3: InputManager・SaveManager・Settings
+  - Phase 2-3: InputManager・SaveManager・Settings(完了)
+  - Phase 2-4: 基本UI(Button・Panel・ProgressBar)と UI の入力の振り分け
 - フェーズの一覧と内容は `docs/ARCHITECTURE.md` の「開発フェーズ」を参照
 - フェーズが進んだら、この項目を更新する

@@ -5,6 +5,7 @@
 import { Container } from 'pixi.js';
 import { describe, expect, it, vi } from 'vitest';
 import { SceneManager } from '../../src/app/SceneManager';
+import { Button } from '../../src/presentation/ui/Button';
 import type { Scene, SceneContext } from '../../src/presentation/scenes/Scene';
 import type { ProgressListener } from '../../src/services/assets/assetTypes';
 import { InputManager } from '../../src/services/input/InputManager';
@@ -636,6 +637,26 @@ describe('SceneManager: 入力', () => {
     finishFade(manager);
     finishFade(manager);
     expect(input.isPaused).toBe(false);
+  });
+
+  it('シーンの root の中のボタンが反応したタップは、ゲーム側(input.on)に渡さない', () => {
+    const { manager, input, contexts, created } = setup();
+    manager.start('a');
+    finishFade(manager);
+    const onClick = vi.fn();
+    const button = new Button({ label: 'ok', width: 40, height: 40, onClick });
+    created.a?.root.addChild(button); // 原点 (0, 0) に置く
+    const events: InputEvent[] = [];
+    contexts[0]?.input.on((e) => events.push(e));
+
+    tap(input); // (0, 0) = ボタンの上
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(events).toEqual([]);
+
+    button.visible = false;
+    tap(input); // 非表示なのでゲーム側へ
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(events.map((e) => e.type)).toEqual(['tap']);
   });
 
   it('destroy すると一時停止も解除する', () => {

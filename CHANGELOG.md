@@ -5,6 +5,28 @@
 
 形式: 新しい変更を上に追記する。区分は「追加」「変更」「修正」「削除」。
 
+## [0.5.0] - 2026-09-24 — Phase 2-4: 基本UI
+
+### 追加
+
+- `src/presentation/ui/`: 基本UI
+  - `Button.ts`: 文字付きのボタン(押下中・無効の見た目)
+  - `Panel.ts`: 角丸の板。背後への入力を遮る。`modal` で背後の操作を受け付けない。背後を暗くする `setBackdrop()`
+  - `ProgressBar.ts`: 0〜1 の横棒
+  - `uiTargets.ts`: 当たり判定の対象の型と、最も手前の対象を探す `findUITarget()`
+  - `UIInputRouter.ts`: UI への入力の振り分け(押下・外に出たときの取り消し・離したときの実行、モーダル)
+  - `uiStyle.ts`: 既定の見た目
+- `InputManager.addPointerHandler()`: ジェスチャーの判定より先に指を受け取るポインタ処理。独占した指はゲーム側に渡さない
+- `src/app/disablePixiEvents.ts`: Pixi のイベントシステムの DOM イベントを外す
+- デモ: A に「設定パネル」ボタンと、モーダルの設定パネル(`DemoSettingsPanel.ts`。品質の切り替え・マスター音量)。デモのレイアウト定義に基準点 `button` を追加
+- テスト: `tests/presentation/ui/uiInput.test.ts`(当たり判定・重なり・非表示・無効・モーダル・拡大縮小した親・押下の判定)、InputManager のポインタ処理、SceneManager でボタンのタップがゲーム側に渡らないこと
+
+### 変更
+
+- **Pixi のイベントシステムを無効にした**(`eventMode: 'none'`・`eventFeatures` をすべて false・DOM イベントを外す)。Pixi の `pointertap` などは使えない。UI は Button・Panel、それ以外の入力は `context.input` を使う
+- `SceneInputScope` / `InputController`: `addPointerHandler` を追加。シーンごとに `UIInputRouter` を自動で登録する(`MountedScene`)
+- `LoadingView`: 進捗バーを `ProgressBar` に置き換え
+
 ## [0.4.0] - 2026-09-23 — Phase 2-3: 入力・セーブ・設定
 
 ### 追加

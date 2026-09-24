@@ -17,6 +17,11 @@ function fakeInput() {
       resumes.push(resume);
       return resume;
     }),
+    addPointerHandler: vi.fn(() => {
+      const off = vi.fn();
+      offs.push(off);
+      return off;
+    }),
   };
 }
 
@@ -26,8 +31,10 @@ describe('SceneInputScope', () => {
     const scope = new SceneInputScope(input);
     scope.on(() => {});
     scope.on(() => {});
+    scope.addPointerHandler({ down: () => true, move: () => {}, up: () => {}, cancel: () => {} });
     scope.pause();
     scope.dispose();
+    expect(input.offs).toHaveLength(3);
     expect(input.offs.every((off) => off.mock.calls.length === 1)).toBe(true);
     expect(input.resumes[0]).toHaveBeenCalledTimes(1);
   });

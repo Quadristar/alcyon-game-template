@@ -7,12 +7,15 @@
  * - バンドル demoA の画像を表示する(このシーンに入るときに読み込まれ、出るときに解放される)
  * - タップ回数(保存され、再読み込み後も残る)と、最後のスワイプの方向・開始位置を表示する
  * - 画面をタップするとデモシーンBへ切り替える
+ * - 「設定パネル」ボタンでモーダルの設定パネルを開く(ボタンやパネルへのタップではシーンを切り替えない)
  */
 import { Container, Graphics, Sprite, Text } from 'pixi.js';
 import type { InputEvent, SwipeEvent } from '../../../services/input/inputTypes';
+import { Button } from '../../ui/Button';
 import type { Scene, SceneContext } from '../Scene';
 import type { DemoManifest } from './demoAssets';
 import { addTap, type DemoSave } from './demoSave';
+import { DemoSettingsPanel } from './DemoSettingsPanel';
 import type { DemoLayout } from './demoLayout';
 import { fitPicture } from './fitPicture';
 import { DEMO_STYLE } from './demoStyle';
@@ -49,6 +52,13 @@ export class DemoSceneA implements Scene<DemoLayout, DemoManifest> {
   private readonly title = label('Demo A', S.textColor, S.titleFontSize);
   private readonly hint = label('タップで Demo B へ', S.textColor, S.hintFontSize);
   private picture: Sprite | null = null;
+  private panel: DemoSettingsPanel | null = null;
+  private readonly openButton = new Button({
+    label: '設定パネル',
+    width: S.settingsPanel.openButtonWidth,
+    height: S.settingsPanel.openButtonHeight,
+    onClick: () => this.panel?.open(),
+  });
   private lastSwipe: SwipeEvent | null = null;
   private layout: DemoLayout | null = null;
 
@@ -62,6 +72,9 @@ export class DemoSceneA implements Scene<DemoLayout, DemoManifest> {
     this.picture.anchor.set(0.5);
     // 名前のラベルは最前面に置く
     this.root.addChild(this.guides, this.picture, this.swipeMark, this.info, this.title, this.hint, this.labels);
+    // ボタンとパネルは最前面(パネルはボタンより手前)
+    this.panel = new DemoSettingsPanel(this.context.settings);
+    this.root.addChild(this.openButton, this.panel);
 
     // 入力の登録は exit の後に自動で解除されるため、解除の処理は書かなくてよい
     this.context.input.on((event) => this.onInput(event));
@@ -111,6 +124,8 @@ export class DemoSceneA implements Scene<DemoLayout, DemoManifest> {
     this.info.position.set(infoOrigin.x + S.infoPadding, infoOrigin.y + S.infoPadding + S.labelFontSize);
     this.info.text = this.infoText(layout);
     this.title.position.set(layout.anchors.center.x, layout.anchors.center.y);
+    this.openButton.position.set(layout.anchors.button.x, layout.anchors.button.y);
+    this.panel?.layoutIn(layout);
     if (this.picture !== null) {
       fitPicture(this.picture, layout.anchors.picture, layout.regions.main, S.pictureRatio);
     }

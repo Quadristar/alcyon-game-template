@@ -69,3 +69,21 @@ export interface GestureThresholds {
   /** これより長くかけて動かしたらスワイプとみなさない */
   readonly swipeMaxDurationMs: number;
 }
+
+/**
+ * ジェスチャーの判定より先にポインタを受け取る処理(UI のボタンやモーダルなど)。
+ * 位置は画面座標(表示物の toLocal で当たり判定するため)。
+ */
+export interface PointerHandler {
+  /**
+   * 指を置いた。true を返すと、離すまでこの指を独占する
+   * (その指の操作はジェスチャーとして通知しない = ゲーム側に渡さない)
+   */
+  down(position: Point): boolean;
+  /** 独占中の指が動いた */
+  move(position: Point): void;
+  /** 独占中の指を離した */
+  up(position: Point): void;
+  /** 独占中の操作が取り消された(pointercancel・一時停止・登録の解除) */
+  cancel(): void;
+}

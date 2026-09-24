@@ -9,7 +9,7 @@
 import type { Layout, LayoutDefinition, Rect } from '../../../services/layout/layoutTypes';
 
 export type DemoRegion = 'info' | 'main' | 'hint';
-export type DemoAnchor = 'center' | 'picture' | 'infoTopLeft' | 'hint';
+export type DemoAnchor = 'center' | 'picture' | 'button' | 'infoTopLeft' | 'hint';
 export type DemoLayout = Layout<DemoRegion, DemoAnchor>;
 
 /** 配置の数値(論理座標) */
@@ -26,6 +26,8 @@ const SPACING = {
   hintHeight: 120,
   /** picture の基準点の、main の上端からの位置(main の高さに対する割合) */
   pictureRatioY: 0.25,
+  /** button の基準点の、main の上端からの位置(main の高さに対する割合) */
+  buttonRatioY: 0.82,
 } as const;
 
 /** 矩形を内側に縮める */
@@ -40,6 +42,11 @@ function inset(rect: Rect, amount: number): Rect {
 
 function centerOf(rect: Rect): { x: number; y: number } {
   return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+}
+
+/** main の中で、ボタンを置く基準点 */
+function buttonOf(main: Rect): { x: number; y: number } {
+  return { x: main.x + main.width / 2, y: main.y + main.height * SPACING.buttonRatioY };
 }
 
 /** main の中で、画像を置く基準点 */
@@ -61,7 +68,7 @@ export const demoLayout: LayoutDefinition<DemoRegion, DemoAnchor> = {
     const main: Rect = { x: area.x, y: mainTop, width: area.width, height: Math.max(0, hint.y - SPACING.gap - mainTop) };
     return {
       regions: { info, main, hint },
-      anchors: { center: centerOf(main), picture: pictureOf(main), infoTopLeft: { x: info.x, y: info.y }, hint: centerOf(hint) },
+      anchors: { center: centerOf(main), picture: pictureOf(main), button: buttonOf(main), infoTopLeft: { x: info.x, y: info.y }, hint: centerOf(hint) },
     };
   },
   landscape: ({ safeArea }) => {
@@ -78,7 +85,7 @@ export const demoLayout: LayoutDefinition<DemoRegion, DemoAnchor> = {
     const main: Rect = { x: rightX, y: area.y, width: rightWidth, height: Math.max(0, hint.y - SPACING.gap - area.y) };
     return {
       regions: { info, main, hint },
-      anchors: { center: centerOf(main), picture: pictureOf(main), infoTopLeft: { x: info.x, y: info.y }, hint: centerOf(hint) },
+      anchors: { center: centerOf(main), picture: pictureOf(main), button: buttonOf(main), infoTopLeft: { x: info.x, y: info.y }, hint: centerOf(hint) },
     };
   },
 };
