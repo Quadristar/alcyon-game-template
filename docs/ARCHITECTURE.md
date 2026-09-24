@@ -248,18 +248,21 @@
 | 2 | 共通基盤(Game / SceneManager / AssetManager / InputManager / LayoutManager / SaveManager / Settings / デバッグ表示 / 基本UI / デモシーン) |
 | 拡張 | 汎用演出と音声(GSAP・Howler.js の導入、フラッシュ・揺れ・フェード・トランジション・AudioManager)。ゲーム開発の中で必要になった時点で、雛形側にも整備する |
 
-Phase 2 が完了した時点で、Settings の「Template repository」を有効にする。
+Phase 2 は v1.0.0 で完了した。完了した時点で、Settings の「Template repository」を有効にする。
 
 ---
 
 ## 14. 新しいゲームを始める手順
 
+詳しい手順は `docs/NEW_GAME.md` にある(雛形から作ったリポジトリでやり直す GitHub の設定、デモを最小の形に置き換えるコード例を含む)。要点:
+
 1. このリポジトリで「Use this template」を押し、ゲーム用のリポジトリを作成する
 2. ゲーム側の Settings → Pages で Source を「GitHub Actions」にする
-3. `src/app/gameConfig.ts` の `gameId` をゲーム固有の値に変える(セーブデータが他のゲームと混ざらないようにするため)
-4. ゲーム用の `CLAUDE.md` に差し替え、`docs/GAME_DESIGN.md` を追加する
-5. `presentation/scenes/demo/` を削除し、ゲーム固有のシーンに置き換える
+3. `src/app/gameConfig.ts` の `gameId` と `package.json` の `name` をゲーム固有の値に変える
+4. `presentation/scenes/demo/` と `public/assets/demo/` を削除し、`src/presentation/game/` と最初のシーンに置き換える
+5. ゲーム用の `CLAUDE.md` に差し替え、`docs/GAME_DESIGN.md` を追加する。README に雛形のバージョンを記録する
 6. `docs/ARCHITECTURE.md` はこの雛形のものをそのまま使う
+7. `main` のブランチ保護ルール(Rulesets)を作る
 
 雛形を更新したときは `CHANGELOG.md` を確認し、必要な変更を各ゲームへ手動で取り込む。
 
