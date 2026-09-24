@@ -44,11 +44,22 @@ describe('formatDebugStats', () => {
       { name: 'demoB', state: 'loading', refCount: 1, progress: 0.5 },
     ],
     assetFailures: 0,
+    quality: 'medium',
+    resolution: 2,
+    saveStatus: 'ok',
   };
 
   it('FPS・推定メモリ・表示オブジェクト数・向きと論理解像度・バンドルを表示する', () => {
     expect(formatDebugStats(base)).toBe(
-      ['FPS 60', 'Tex 2.00 MB(推定)', 'Obj 42', '縦 720×1280 ×0.54', 'Bundle boot×1 demoB×1(読込中)'].join('\n'),
+      [
+        'FPS 60',
+        'Tex 2.00 MB(推定)',
+        'Obj 42',
+        '縦 720×1280 ×0.54',
+        'Bundle boot×1 demoB×1(読込中)',
+        '品質 中 解像度 2',
+        '保存 正常',
+      ].join('\n'),
     );
   });
 
@@ -57,5 +68,11 @@ describe('formatDebugStats', () => {
     expect(text).toContain('Bundle (なし)');
     expect(text).toContain('読込失敗 2件');
     expect(text).toContain('横 720×1280');
+  });
+
+  it('品質と保存の状態を表示する', () => {
+    const text = formatDebugStats({ ...base, quality: 'low', resolution: 1.5, saveStatus: 'memory' });
+    expect(text).toContain('品質 低 解像度 1.5');
+    expect(text).toContain('保存 メモリ上で動作中');
   });
 });

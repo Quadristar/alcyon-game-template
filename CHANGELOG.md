@@ -5,6 +5,37 @@
 
 形式: 新しい変更を上に追記する。区分は「追加」「変更」「修正」「削除」。
 
+## [0.4.0] - 2026-09-23 — Phase 2-3: 入力・セーブ・設定
+
+### 追加
+
+- `src/services/input/`: 入力
+  - `GestureRecognizer.ts`: タップ・ドラッグ・スワイプ(方向付き)の判定(DOM 非依存)。1本の指だけを扱い、2本目以降は無視
+  - `InputManager.ts`: 判定結果を論理座標にして通知。一時停止(停止要求の数を数える)
+  - `attachPointerInput.ts`: Pointer Events をつなぎ、スクロール・ズーム・長押しメニューを抑止
+  - `inputTypes.ts`: 入力イベントの型としきい値の型
+- `src/services/layout/computeLayout.ts`: `screenToLogical()`(画面座標 → 論理座標)
+- `src/services/save/`: セーブ
+  - `SaveManager.ts`: ゲーム ID の名前空間、バージョン移行と書き戻し、壊れたデータの退避(`キー.corrupt`)、保存できないときのメモリ上での継続と記録
+  - `readSaveRecord.ts`: 保存形式の読み取りと移行(純粋な関数)
+  - `storages.ts`: `MemoryStorage`・`FailingStorage`・`openBrowserStorage()`
+  - `saveTypes.ts`: `SaveSchema`・`SaveStorage` などの型
+- `src/services/settings/`: 設定(音量・ミュート・品質プリセット)。音量は 500ms まとめて保存、品質から描画解像度を決める `renderResolution()`
+- `src/app/`: `createPersistence.ts`(SaveManager と Settings の用意、ページを閉じる前の保存)、`SceneInputScope.ts`(シーンごとの入力の登録を exit で解除)、`MountedScene.ts`(SceneManager から分割)
+- デモ: `demoSave.ts`(タップ回数の保存)。A にスワイプの方向・開始位置・軌跡、A・B にタップ回数を表示
+- デバッグ表示: 品質と描画解像度、保存の状態。URL パラメータ `quality` と `savefail`
+- テスト: `tests/services/input/`・`tests/services/save/`・`tests/services/settings/`・`tests/app/SceneInputScope.test.ts`、SceneManager の入力関連
+
+### 変更
+
+- **`gameConfig.ts` に `gameId`(仮: `alcyon-template`)を追加。雛形から作ったゲームでは必ず変えること**。入力のしきい値・設定の初期値も追加
+- `renderConfig.ts`: `maxResolution` を、品質プリセットごとの `quality`(高・中: 2、低: 1.5)に置き換え
+- `Scene`: `SceneContext` に `input`・`save`・`settings` を追加。型引数にセーブデータの型 `D` を追加
+- `SceneManager`: 切り替え中は入力を一時停止する。シーンの入力の登録と一時停止を exit で自動的に解除する
+- `Game`: 起動時にセーブと設定を読み込み、品質から描画解像度を決める。品質の変更を実行中に反映する。`GameOptions` に `save`(ゲームのセーブデータの形式)を追加
+- デモ: Pixi のイベント(pointertap)をやめ、InputManager で入力を受け取るように変更
+- README: セーブデータの保存先(localStorage と容量の共有、`gameId`)を追記
+
 ## [0.3.0] - 2026-09-23 — Phase 2-2: アセット管理・デバッグ表示
 
 ### 追加

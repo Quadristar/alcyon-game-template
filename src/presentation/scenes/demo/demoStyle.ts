@@ -29,6 +29,7 @@ export const DEMO_STYLE = {
     safeAreaColor: 0x3ddc84,
     regionColor: 0xffc857,
     anchorColor: 0xff6b9a,
+    swipeColor: 0x7fd4ff,
   },
   sceneB: {
     screenColor: 0x0e2a2a,

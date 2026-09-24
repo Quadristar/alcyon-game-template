@@ -5,6 +5,7 @@
 import type {
   FitResult,
   Insets,
+  Point,
   Layout,
   LayoutDefinition,
   LogicalSizes,
@@ -96,4 +97,9 @@ export function computeLayout<R extends string, A extends string>(
       ? source({ orientation: fit.orientation, logical: fit.logical, safeArea: fit.safeArea })
       : source;
   return { ...fit, regions: spec.regions, anchors: spec.anchors };
+}
+
+/** 画面座標(CSS ピクセル)の点を論理座標に変換する */
+export function screenToLogical(fit: Pick<FitResult, 'scale' | 'offset'>, point: Point): Point {
+  return { x: (point.x - fit.offset.x) / fit.scale, y: (point.y - fit.offset.y) / fit.scale };
 }

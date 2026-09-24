@@ -19,7 +19,7 @@ const SPACING = {
   /** 領域どうしの間隔 */
   gap: 16,
   /** 縦画面の info の高さ */
-  portraitInfoHeight: 260,
+  portraitInfoHeight: 330,
   /** 横画面の info の幅 */
   landscapeInfoWidth: 380,
   /** hint の高さ */

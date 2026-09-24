@@ -4,6 +4,8 @@
 import type { Container } from 'pixi.js';
 import type { BundleStatus } from '../../services/assets/assetTypes';
 import type { Orientation, Size } from '../../services/layout/layoutTypes';
+import type { SaveStatus } from '../../services/save/saveTypes';
+import type { QualityPreset } from '../../services/settings/settingsTypes';
 
 /** デバッグ表示に出す値 */
 export interface DebugStats {
@@ -17,6 +19,10 @@ export interface DebugStats {
   readonly bundles: readonly BundleStatus[];
   /** 読み込みに最終的に失敗したアセットの数 */
   readonly assetFailures: number;
+  readonly quality: QualityPreset;
+  /** 現在の描画解像度 */
+  readonly resolution: number;
+  readonly saveStatus: SaveStatus;
 }
 
 /**
@@ -59,6 +65,8 @@ export function countDisplayObjects(root: Container): number {
 }
 
 const ORIENTATION_LABEL: Record<Orientation, string> = { portrait: '縦', landscape: '横' };
+const QUALITY_LABEL: Record<QualityPreset, string> = { low: '低', medium: '中', high: '高' };
+const SAVE_STATUS_LABEL: Record<SaveStatus, string> = { ok: '正常', memory: 'メモリ上で動作中' };
 
 /** バイト数を MB で表示する */
 function formatMegabytes(bytes: number): string {
@@ -77,6 +85,8 @@ export function formatDebugStats(stats: DebugStats): string {
     `Obj ${stats.displayObjects}`,
     `${ORIENTATION_LABEL[stats.orientation]} ${stats.logical.width}×${stats.logical.height} ×${stats.scale.toFixed(2)}`,
     `Bundle ${bundles}`,
+    `品質 ${QUALITY_LABEL[stats.quality]} 解像度 ${Math.round(stats.resolution * 100) / 100}`,
+    `保存 ${SAVE_STATUS_LABEL[stats.saveStatus]}`,
   ];
   if (stats.assetFailures > 0) {
     lines.push(`読込失敗 ${stats.assetFailures}件`);
