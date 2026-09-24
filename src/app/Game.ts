@@ -35,6 +35,7 @@ import type { SaveSchema } from '../services/save/saveTypes';
 import { renderResolution } from '../services/settings/quality';
 import { createAssetManager } from './createAssetManager';
 import { createPersistence } from './createPersistence';
+import { disablePixiEvents } from './disablePixiEvents';
 import { GAME_CONFIG } from './gameConfig';
 import { RENDER_CONFIG } from './renderConfig';
 import { SceneManager } from './SceneManager';
@@ -84,12 +85,17 @@ export class Game<K extends string, R extends string, A extends string, M extend
       resolution: resolutionFor(),
       autoDensity: true,
       antialias: RENDER_CONFIG.antialias,
+      // Pixi のイベントシステムは使わない(入力は InputManager に一本化し、二重に反応しないようにする)
+      eventMode: 'none',
+      eventFeatures: { move: false, globalMove: false, click: false, wheel: false },
     });
 
     const renderer = app.renderer;
     if (!(renderer instanceof WebGLRenderer)) {
       throw new Error(`WebGL 以外のレンダラが選ばれました: ${renderer.name}`);
     }
+    // Pixi がキャンバスに登録した DOM のイベントも外す(以降は attachPointerInput だけが受け取る)
+    disablePixiEvents(renderer);
     root.appendChild(app.canvas);
 
     // 品質プリセットが変わったら、描画解像度を切り替える(文字なども新しい解像度で描き直される)
