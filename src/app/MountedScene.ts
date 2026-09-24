@@ -1,8 +1,10 @@
 /**
  * 表示中のシーン1つ分: 生成・レイヤーへの追加と、exit・破棄・入力の解除をまとめる。
+ * シーンの root の中の UI(Button・Panel)への入力は、UIInputRouter が自動で振り分ける。
  */
 import type { Container } from 'pixi.js';
 import type { Scene, SceneContext, SceneFactory } from '../presentation/scenes/Scene';
+import { UIInputRouter } from '../presentation/ui/UIInputRouter';
 import type { AssetManifest, BundleName } from '../services/assets/assetTypes';
 import type { Layout } from '../services/layout/layoutTypes';
 import { type InputController, SceneInputScope } from './SceneInputScope';
@@ -39,6 +41,8 @@ export class MountedScene<K extends string, L extends Layout, M extends AssetMan
   ): MountedScene<K, L, M> {
     const inputScope = new SceneInputScope(target.input);
     const scene = factory({ ...context, input: inputScope });
+    // UI への入力を、ゲーム側(context.input.on)より先に振り分ける
+    inputScope.addPointerHandler(new UIInputRouter(scene.root));
     target.sceneLayer.addChild(scene.root);
     if (scene.background !== undefined) {
       target.backgroundLayer.addChild(scene.background);

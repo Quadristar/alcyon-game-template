@@ -1,15 +1,16 @@
 /**
  * シーンごとの入力の窓口。
- * シーンが登録した入力の受け取りと一時停止を覚えておき、dispose() でまとめて解除する
+ * シーンが登録した入力の受け取り・一時停止・ポインタ処理(UI)を覚えておき、dispose() でまとめて解除する
  * (SceneManager がシーンの exit の後に呼ぶため、解除漏れが起きない)。
  */
 import type { SceneInput } from '../presentation/scenes/Scene';
-import type { InputListener } from '../services/input/inputTypes';
+import type { InputListener, PointerHandler } from '../services/input/inputTypes';
 
 /** 入力の受け取りと一時停止(InputManager が満たす) */
 export interface InputController {
   on(listener: InputListener): () => void;
   pause(): () => void;
+  addPointerHandler(handler: PointerHandler): () => void;
 }
 
 export class SceneInputScope implements SceneInput {
@@ -24,6 +25,11 @@ export class SceneInputScope implements SceneInput {
 
   pause(): () => void {
     return this.track(() => this.input.pause());
+  }
+
+  /** ポインタ処理(UI の入力振り分け)を登録する */
+  addPointerHandler(handler: PointerHandler): () => void {
+    return this.track(() => this.input.addPointerHandler(handler));
   }
 
   /** 登録をすべて解除する。以降の on / pause は何もしない */
