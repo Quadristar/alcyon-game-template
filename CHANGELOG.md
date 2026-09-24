@@ -5,6 +5,25 @@
 
 形式: 新しい変更を上に追記する。区分は「追加」「変更」「修正」「削除」。
 
+## [1.0.0] - 2026-09-24 — Phase 2 完了
+
+Phase 2(共通基盤)の完了を区切りとして、バージョンを 1.0.0 とする。
+雛形から作ったゲームは、README にこのバージョンを記録し、以降の変更をここから取り込む。
+
+### 追加
+
+- `docs/NEW_GAME.md`: 新しいゲームを始める手順
+  - テンプレートから引き継がれない GitHub の設定(Pages の Source、main のブランチ保護ルール)のやり直し
+  - `gameId`・`package.json` の `name`・`<title>` の変更
+  - デモを削除し、最小の形(`src/presentation/game/` と最初のシーン)に置き換えるコード例
+  - `CLAUDE.md` の差し替え・`docs/GAME_DESIGN.md` の追加・README への雛形のバージョンの記録
+
+### 変更
+
+- `package.json` の `version` を 1.0.0 に変更
+- README・ARCHITECTURE の「新しいゲームを始める手順」を `docs/NEW_GAME.md` への案内に変更
+- CLAUDE.md の現在のフェーズを「Phase 2 完了(v1.0.0)」に更新
+
 ## [0.5.0] - 2026-09-24 — Phase 2-4: 基本UI
 
 ### 追加

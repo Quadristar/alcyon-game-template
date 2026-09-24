@@ -152,10 +152,11 @@ npm run check      # typecheck + lint + test + build をまとめて実行
 
 ## 10. 現在のフェーズ
 
-- 現在: **Phase 2(共通基盤)**
+- 現在: **Phase 2 完了(v1.0.0)**。以降は拡張フェーズ(ゲーム開発の中で必要になった時点で、雛形側にも整備する)
+  - Phase 1: プロジェクト初期構築(完了)
   - Phase 2-1: LayoutManager・SceneManager・Game・デモシーン(完了)
   - Phase 2-2: AssetManager・デバッグ表示(完了)
   - Phase 2-3: InputManager・SaveManager・Settings(完了)
-  - Phase 2-4: 基本UI(Button・Panel・ProgressBar)と UI の入力の振り分け
+  - Phase 2-4: 基本UI(Button・Panel・ProgressBar)と UI の入力の振り分け(完了)
 - フェーズの一覧と内容は `docs/ARCHITECTURE.md` の「開発フェーズ」を参照
 - フェーズが進んだら、この項目を更新する
